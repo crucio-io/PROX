@@ -1,0 +1,149 @@
+##
+# Copyright(c) 2010-2015 Intel Corporation.
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#
+#   * Redistributions of source code must retain the above copyright
+#     notice, this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright
+#     notice, this list of conditions and the following disclaimer in
+#     the documentation and/or other materials provided with the
+#     distribution.
+#   * Neither the name of Intel Corporation nor the names of its
+#     contributors may be used to endorse or promote products derived
+#     from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+# A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+# OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+# SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+# LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+# DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+# THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+##
+
+Description
+-----------
+This is PROX, the Packet pROcessing eXecution engine, part of Intel(R)
+Data Plane Performance Demonstrators, and formerly known as DPPD-BNG.
+PROX is a DPDK-based application implementing Telco use-cases such as
+a simplified BRAS/BNG, light-weight AFTR... It also allows configuring
+finer grained network functions like QoS, Routing, load-balancing...
+
+Compiling and running this application
+--------------------------------------
+This application supports DPDK versions 1.7.1 and 2.1.0. Depending on
+the DPDK version, the installation procedure is slightly different. The
+following commands assume that the following variables have been set:
+
+export PROX_DIR=/path/to/this/application
+export RTE_SDK=/path/to/dpdk
+export RTE_TARGET=x86_64-native-linuxapp-gcc
+
+DPDK 1.7.1 installation
+-----------------------
+git clone http://dpdk.org/git/dpdk
+cd dpdk
+git checkout v1.7.1
+git cherry-pick 98f255ed0a4a73bf785e884dc2069405de840546
+git cherry-pick 0d6e2d783d164503e75e57b7358dc3c5c09e0bf1
+git cherry-pick 442f3bed6a0964e938c809e8811fa0636ef13f49
+git cherry-pick ee19d51ae56dcb685d9a04d9e859873d35565232
+git cherry-pick 6573369dd735c43930bfddec34124da05b1584df
+git cherry-pick 81ab433fffa4885a76023abd3c8a7e47aee014e3
+git cherry-pick 2f95a470b80df115a0a0c9fba4bfbae73f4d66ae
+git cherry-pick a68f506430c56560f11d0421675b173850392fb0
+git cherry-pick 71f0ab1849b4fc3ca928deb566df12ca725ed150
+git add lib/librte_pmd_ixgbe/Makefile
+git add lib/librte_pmd_i40e/Makefile
+git reset
+git checkout lib/librte_pmd_i40e/Makefile
+git checkout lib/librte_pmd_ixgbe/Makefile
+git checkout lib/librte_pmd_vmxnet3/Makefile
+patch -p1 < $PROX_DIR/dpdk-patches/*-DPDK-1.7.1-*.patch
+make install T=$RTE_TARGET
+
+Note that patch will succeed, but some hunks will be offset. Since the
+patch is meant to apply cleanly to version 1.7.1 without any changes,
+some offsetting is expected.
+
+DPDK 2.1.0 installation
+-----------------------
+git clone http://dpdk.org/git/dpdk
+cd dpdk
+git checkout v2.1.0
+make install T=$RTE_TARGET
+
+PROX compilation
+----------------
+The Makefile with this application expects RTE_SDK to point to the
+root directory of DPDK (e.g. export RTE_SDK=/root/dpdk). If RTE_TARGET
+has not been set, x86_64-native-linuxapp-gcc will be assumed.
+
+Running PROX
+------------
+After DPDK has been set up, run make from the directory where you have
+extracted this application. A build directory will be created
+containing the PROX executable. The usage of the application is shown
+below. Note that this application assumes that all required ports have
+been bound to the DPDK provided igb_uio driver. Refer to the "Getting
+Started Guide - DPDK" document for more details.
+
+Usage: ./build/prox [-f CONFIG_FILE] [-a|-e] [-s|-i] [-w DEF] [-u] [-t]
+	-f CONFIG_FILE : configuration file to load, ./prox.cfg by default
+	-l LOG_FILE : log file name, ./prox.log by default
+	-p : include PID in log file name if default log file is used
+	-a : autostart all cores (by default)
+	-e : don't autostart
+	-s : check configuration file syntax and exit
+	-i : check initialization sequence and exit
+	-u : Listen on UDS /tmp/prox.sock
+	-t : Listen on TCP port 8474
+	-w : define variable using syntax varname=value
+	     takes precedence over variables defined in CONFIG_FILE
+
+While applications using DPDK typically rely on the core mask and the
+number of channels to be specified on the command line, this
+application is configured using a .cfg file. The core mask and number
+of channels is derived from this config. For example, to run the
+application from the source directory execute:
+
+  user@target:~$ ./build/prox -f ./config/nop.cfg
+
+Provided example configurations
+-------------------------------
+PROX can be configured either as the SUT (System Under Test) or as the
+Traffic Generator. Some example configuration files are provided, both
+in the config directory to run PROX as a SUT, and in the gen directory
+to run it as a Traffic Generator.
+A quick description of these example configurations is provided below.
+Additional details are provided in the example configuration files.
+
+Basic configurations, mostly used as sanity check:
+- config/nop.cfg
+- config/nop-rings.cfg
+- gen/nop-gen.cfg
+
+Simplified BNG (Border Network Gateway) configurations, using different
+number of ports, with and without QoS, running on the host or in a VM:
+- config/bng-4ports.cfg
+- config/bng-8ports.cfg
+- config/bng-qos-4ports.cfg
+- config/bng-qos-8ports.cfg
+- config/bng-1q-4ports.cfg
+- config/bng-ovs-usv-4ports.cfg
+- config/bng-no-cpu-topology-4ports.cfg
+- gen/bng-4ports-gen.cfg
+- gen/bng-8ports-gen.cfg
+- gen/bng-ovs-usv-4ports-gen.cfg
+
+Light-weight AFTR configurations:
+- config/lw_aftr.cfg
+- gen/lw_aftr-gen.cfg
