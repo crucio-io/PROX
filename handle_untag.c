@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -138,6 +138,7 @@ static inline uint8_t handle_untag(struct task_untag *task, struct rte_mbuf *mbu
 	case ETYPE_IPv4:
 		return 0;
 	case ETYPE_8021ad:
+	case ETYPE_VLAN:
 		return untag_qinq(mbuf, (struct qinq_hdr *)peth);
 	default:
 		plog_warn("Failed untagging header: ether_type = %#06x is not supported\n", peth->ether_type);

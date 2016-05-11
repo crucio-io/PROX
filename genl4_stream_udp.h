@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -36,7 +36,7 @@
 
 int stream_udp_is_ended(struct stream_ctx *ctx);
 
-int stream_udp_proc(struct stream_ctx *ctx, struct rte_mbuf *mbuf, struct l4_meta *l4_meta, uint64_t *next_tsc, uint32_t *retransmit);
+int stream_udp_proc(struct stream_ctx *ctx, struct rte_mbuf *mbuf, struct l4_meta *l4_meta, uint64_t *next_tsc);
 uint16_t stream_udp_reply_len(struct stream_ctx *ctx);
 void stream_udp_calc_len(struct stream_cfg *cfg, uint32_t *n_pkts, uint32_t *n_bytes);
 

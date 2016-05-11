@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -1147,8 +1147,8 @@ static int parse_cmd_stats(const char *str, struct input *input)
 	if (strcmp(str, "") == 0)
 		return -1;
 
-	char buf[1024];
-	char ret2[1024];
+	char buf[32768];
+	char ret2[32768];
 	char *ret = ret2;
 	int list = 0;
 

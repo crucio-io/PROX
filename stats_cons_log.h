@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -29,17 +29,15 @@
   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include "stats_cons.h"
+#ifndef _STATS_CONS_LOG_H_
+#define _STATS_CONS_LOG_H_
 
-#define BUFFERED_RECORD_LEN 16384
+#include "stats_cons.h"
 
 void stats_cons_log_init(void);
 void stats_cons_log_notify(void);
 void stats_cons_log_finish(void);
 
-static struct stats_cons stats_cons_log = {
-	.init = stats_cons_log_init,
-	.notify = stats_cons_log_notify,
-	.finish = stats_cons_log_finish,
-	.flags = STATS_CONS_F_TASKS,
-};
+struct stats_cons *stats_cons_log_get(void);
+
+#endif /* _STATS_CONS_LOG_H_ */

@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -81,6 +81,7 @@ static const char *tcp_state_to_str(const enum tcp_state s)
 #define STREAM_CTX_F_TCP_GOT_SYN   0x08 /* Set only once when syn has been received */
 #define STREAM_CTX_F_TCP_GOT_FIN   0x10 /* Set only once when fin has been received */
 #define STREAM_CTX_F_MORE_DATA     0x20
+#define STREAM_CTX_F_LAST_RX_PKT_MADE_PROGRESS  0x40
 
 /* Run-time structure to management state information associated with current stream_cfg. */
 struct stream_ctx {
@@ -122,10 +123,29 @@ struct stream_cfg {
 	uint32_t           n_actions;
 	uint32_t           n_pkts;
 	uint32_t           n_bytes;
-	int                (*proc)(struct stream_ctx *meta, struct rte_mbuf *mbuf, struct l4_meta *l4_meta, uint64_t *next_tsc, uint32_t *retransmit);
+	int                (*proc)(struct stream_ctx *meta, struct rte_mbuf *mbuf, struct l4_meta *l4_meta, uint64_t *next_tsc);
 	int                (*is_ended)(struct stream_ctx *meta);
 	struct peer_action actions[0];
 };
+
+static void scale_for_jitter(uint64_t *to_scale)
+{
+	(*to_scale) *= 2;
+}
+
+static void reset_token_times(struct stream_ctx *ctx)
+{
+	const uint64_t now = rte_rdtsc();
+	const struct stream_cfg *cfg = ctx->stream_cfg;
+	enum l4gen_peer peer = ctx->peer;
+
+	token_time_init(&ctx->token_time, &cfg->tt_cfg[peer]);
+	token_time_reset_full(&ctx->token_time, now);
+
+	token_time_init(&ctx->token_time_other, &cfg->tt_cfg[!peer]);
+	scale_for_jitter(&ctx->token_time_other.cfg.bytes_max);
+	token_time_reset_full(&ctx->token_time_other, now);
+}
 
 static void stream_ctx_init(struct stream_ctx *ctx, enum l4gen_peer peer, struct stream_cfg *cfg, struct pkt_tuple *tuple)
 {
@@ -140,13 +160,7 @@ static void stream_ctx_init(struct stream_ctx *ctx, enum l4gen_peer peer, struct
 	ctx->tcp_state = PEER_CLIENT == peer? CLOSED : LISTEN;
 	ctx->other_mss = 536; /* default 536 as per RFC 879 */
 
-	const uint64_t now = rte_rdtsc();
-
-	token_time_init(&ctx->token_time, &cfg->tt_cfg[peer]);
-	token_time_reset(&ctx->token_time, now, ETHER_MAX_LEN + 20);
-
-	token_time_init(&ctx->token_time_other, &cfg->tt_cfg[!peer]);
-	token_time_reset(&ctx->token_time_other, now, ETHER_MAX_LEN + 20);
+	reset_token_times(ctx);
 }
 
 static void stream_ctx_reset_move(struct stream_ctx *ctx, struct stream_cfg *cfg)
@@ -155,16 +169,7 @@ static void stream_ctx_reset_move(struct stream_ctx *ctx, struct stream_cfg *cfg
 	struct pkt_tuple *tuple = ctx->tuple;
 
 	memset(ctx, 0, sizeof(*ctx));
-	ctx->peer = peer;
-	ctx->tuple = tuple;
-	ctx->stream_cfg = cfg;
-
-	const uint64_t now = rte_rdtsc();
-
-	token_time_init(&ctx->token_time, &cfg->tt_cfg[peer]);
-	token_time_reset(&ctx->token_time, now, ETHER_MAX_LEN + 20);
-	token_time_init(&ctx->token_time_other, &cfg->tt_cfg[!peer]);
-	token_time_reset(&ctx->token_time_other, now, ETHER_MAX_LEN + 20);
+	stream_ctx_init(ctx, peer, cfg, tuple);
 }
 
 static int stream_cfg_calc_max_payload_len(struct stream_cfg *cfg, enum l4gen_peer peer)

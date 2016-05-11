@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -83,9 +83,14 @@ static void __attribute__((noreturn)) prox_usage(const char *prgname)
 		  "\t-i : check initialization sequence and exit\n"
 		  "\t-u : Listen on UDS /tmp/prox.sock\n"
 		  "\t-t : Listen on TCP port 8474\n"
-		  "\t-q : Pass argument to Lua interpreter\n"
+		  "\t-q : Pass argument to Lua interpreter, useful to define variables\n"
 		  "\t-w : define variable using syntax varname=value\n"
 		  "\t     takes precedence over variables defined in CONFIG_FILE\n"
+		  "\t-k : Log statistics to file \"stats_dump\" in current directory\n"
+		  "\t-d : Run as daemon, the parent process will block until PROX is not initialized\n"
+		  "\t-z : Ignore CPU topology, implies -i\n"
+		  "\t-r : Change initial screen refresh rate. If set to a lower than 0.001 seconds,\n"
+		  "\t	  screen refreshing will be disabled\n"
 		  , prgname);
 	exit(EXIT_FAILURE);
 }
@@ -95,7 +100,7 @@ static void check_consistent_cfg(void)
 	struct lcore_cfg *lconf = NULL;
 	struct task_args *targ;
 
-	while (core_targ_next(&lconf, &targ) == 0) {
+	while (core_targ_next(&lconf, &targ, 0) == 0) {
 		PROX_PANIC((targ->flags & TASK_ARG_RX_RING) && targ->rx_rings[0] == 0 && !targ->tx_opt_ring_task,
 			   "Configuration Error - Core %u task %u Receiving from ring, but nobody xmitting to this ring\n", lconf->id, targ->id);
 
@@ -210,7 +215,7 @@ static void configure_if_queues(void)
 	struct task_args *targ;
 	uint8_t socket;
 
-	while (core_targ_next(&lconf, &targ) == 0) {
+	while (core_targ_next(&lconf, &targ, 0) == 0) {
 		socket = rte_lcore_to_socket_id(lconf->id);
 
 		configure_if_tx_queues(targ, socket);
@@ -262,7 +267,7 @@ static uint32_t count_incoming_tasks(uint32_t lcore_worker, uint32_t dest_task)
 	uint32_t ret = 0;
 	struct core_task ct;
 
-	while (core_targ_next(&lconf, &targ) == 0) {
+	while (core_targ_next(&lconf, &targ, 0) == 0) {
 		for (uint8_t idxx = 0; idxx < MAX_PROTOCOLS; ++idxx) {
 			for (uint8_t ridx = 0; ridx < targ->core_task_set[idxx].n_elems; ++ridx) {
 				ct = targ->core_task_set[idxx].core_task[ridx];
@@ -413,8 +418,8 @@ static void init_rings(void)
 	struct task_args *starg;
 	struct ring_init_stats ris = {0};
 
-	while (core_targ_next(&lconf, &starg) == 0) {
-		plog_info("\t*** Initializing rings on core %u ***\n", lconf->id);
+	while (core_targ_next(&lconf, &starg, 1) == 0) {
+		plog_info("\t*** Initializing rings on core %u, task %u ***\n", lconf->id, starg->id);
 		for (uint8_t idx = 0; idx < MAX_PROTOCOLS; ++idx) {
 			for (uint8_t ring_idx = 0; ring_idx < starg->core_task_set[idx].n_elems; ++ring_idx) {
 				PROX_ASSERT(ring_idx < MAX_WT_PER_LB);
@@ -660,7 +665,7 @@ static void set_dest_threads(void)
 	struct lcore_cfg *lconf = NULL;
 	struct task_args *targ;
 
-	while (core_targ_next(&lconf, &targ) == 0) {
+	while (core_targ_next(&lconf, &targ, 0) == 0) {
 		for (uint8_t idx = 0; idx < MAX_PROTOCOLS; ++idx) {
 			for (uint8_t ring_idx = 0; ring_idx < targ->core_task_set[idx].n_elems; ++ring_idx) {
 				struct core_task ct = targ->core_task_set[idx].core_task[ring_idx];
@@ -678,7 +683,7 @@ static void setup_all_task_structs_early_init(void)
 	struct task_args *targ;
 
 	plog_info("\t*** Calling early init on all tasks ***\n");
-	while (core_targ_next(&lconf, &targ) == 0) {
+	while (core_targ_next(&lconf, &targ, 0) == 0) {
 		if (targ->task_init->early_init) {
 			targ->task_init->early_init(targ);
 		}
@@ -788,7 +793,7 @@ static int setup_prox(int argc, char **argv)
 
 	if (prox_cfg.flags & DSF_CHECK_SYNTAX) {
 		plog_info("=== Configuration file syntax has been checked ===\n\n");
-		return 0;
+		exit(EXIT_SUCCESS);
 	}
 
 	init_port_activate();

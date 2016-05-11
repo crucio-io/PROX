@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -42,6 +42,7 @@ public:
 	Path(const Path& other) : path(other.path) {}
 	Path(const string& str) : path(str) {}
 	Path add(const string& str) const;
+	Path add(int number) const;
 	Path &concat(const string &str);
 	const string& str() const {return path;}
 	bool isDir() const;

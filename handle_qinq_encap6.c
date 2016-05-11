@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -123,8 +123,8 @@ void init_cpe6_table(struct task_args *targ)
 		.n_buckets_ext = n_entries >> 3,
 		.f_hash = hash_crc32,
 		.seed = 0,
-		.signature_offset = 0,
-		.key_offset = 0,
+		.signature_offset = HASH_METADATA_OFFSET(0),
+		.key_offset = HASH_METADATA_OFFSET(0),
 	};
 
 	size_t entry_size = sizeof(struct cpe_data);

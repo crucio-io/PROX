@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -80,6 +80,7 @@ public:
 	Stream(uint32_t id = -1, uint32_t sizeHint = 0);
 	void addPkt(const PcapPkt &pkt);
 	void toFile(ofstream *f);
+	void toPcap(const string& outFile);
 	double getRate() const;
 	size_t actionCount() const {return m_actions.size();}
 
@@ -98,6 +99,7 @@ private:
 	void addAction(HalfStream *half, HalfStream::Action::Part p, bool isClientPkt);
 
 	int m_id;
+	vector<PcapPkt> m_pkts;
 	vector<HalfStream::Action> m_actions;
 	HalfStream m_client;
 	HalfStream m_server;

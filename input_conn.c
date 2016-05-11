@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -50,7 +50,7 @@ struct client_conn {
 	struct input input;
 	int          enabled;
 	int          n_buf;
-	char         buf[1024];
+	char         buf[32768];
 };
 
 struct client_conn clients[32];
@@ -112,7 +112,11 @@ static int start_listen_uds(void)
 
 static void write_client(struct input *input, const char *buf, size_t len)
 {
-	if (write(input->fd, buf, len) != (int)len) {
+	int ret;
+
+	while ((ret = write(input->fd, buf, len)) != (int)len) {
+		buf += ret;
+		len -= ret;
 	}
 }
 

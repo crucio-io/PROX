@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -56,8 +56,10 @@ public:
 	StreamExtract(const ProgramConfig &cfg);
 	int run();
 private:
-	int writeToLua(const string& binFilePath, const Path &smallFinalBin, const string& luaFilePath);
+	int writeToPcaps(const string &sourceFilePath, const set<uint32_t> &streamIDs);
+	int writeToLua(const string& binFilePath, const Path &smallFinalBin, const string& luaFilePath, const string& orderedTemp);
 	int writeFinalBin(const string& sourceFilePath, const string& destFilePath);
+	string createStreamPcapFileName(int id);
 	vector<Bundle> createBundles(const string& streamPath);
 	set<uint32_t> getBundleStreamIDs(const vector<Bundle*>& bundleSamples);
 	FlowTable<pkt_tuple, Stream3> ft2;

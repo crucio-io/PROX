@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -175,16 +175,15 @@ static void set_l2(struct task_routing *task, struct rte_mbuf *mbuf, uint8_t nh_
 	*((uint64_t *)(&peth->s_addr)) = task->src_mac[task->next_hops[nh_idx].mac_port.out_idx];
 }
 
-static void set_l2_mpls(struct task_routing *task, struct rte_mbuf *mbuf, uint8_t nh_idx)
+static void set_l2_mpls(struct task_routing *task, struct rte_mbuf *mbuf, uint8_t nh_idx, uint16_t l2_len)
 {
 	struct ether_hdr *peth = (struct ether_hdr *)rte_pktmbuf_prepend(mbuf, sizeof(struct mpls_hdr));
-
-	uint16_t l2_len = prox_get_l2_len(mbuf) + sizeof(struct mpls_hdr);
+	l2_len += sizeof(struct mpls_hdr);
 	prox_ip_cksum(mbuf, (struct ipv4_hdr *)((uint8_t *)peth + l2_len), l2_len, sizeof(struct ipv4_hdr));
 
 	*((uint64_t *)(&peth->d_addr)) = task->next_hops[nh_idx].mac_port_8bytes;
 	*((uint64_t *)(&peth->s_addr)) = task->src_mac[task->next_hops[nh_idx].mac_port.out_idx];
-	peth->ether_type = ETYPE_MPLSU;
+	/* MPLSU ether_type written as high word of 64bit src_mac prepared by init_task_routing */
 	struct mpls_hdr *mpls = (struct mpls_hdr *)(peth + 1);
 
 	if (task->runtime_flags & TASK_MARK) {
@@ -240,7 +239,7 @@ static uint8_t route_ipv4(struct task_routing *task, uint8_t *beg, uint32_t ip_o
 			rte_pktmbuf_trim(mbuf, padlen);
                 }
 
-                set_l2_mpls(task, mbuf, next_hop_index);
+                set_l2_mpls(task, mbuf, next_hop_index, ip_offset);
         }
 	else {
 		set_l2(task, mbuf, next_hop_index);

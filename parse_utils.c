@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -42,6 +42,7 @@
 #include "ip6_addr.h"
 #include "parse_utils.h"
 #include "prox_globals.h"
+#include "prox_cfg.h"
 #include "log.h"
 #include "prox_lua.h"
 #include "prox_lua_types.h"
@@ -555,6 +556,29 @@ static int get_socket(uint32_t core_id, uint32_t *socket)
 		*socket = (ret == -1 ? 0 : ret);
 
 	return 0;
+}
+
+int lcore_to_socket_core_ht(uint32_t lcore_id, char *dst, size_t len)
+{
+	if (cpu_topo.n_sockets == 0) {
+		if (read_cpu_topology() == -1) {
+			return -1;
+		}
+	}
+
+	for (uint32_t s = 0; s < cpu_topo.n_sockets; s++) {
+		for (uint32_t i = 0; i < cpu_topo.n_cores[s]; ++i) {
+			if ((uint32_t)cpu_topo.socket[s][i][0] == lcore_id) {
+				snprintf(dst, len, "%us%u", i, s);
+				return 0;
+			} else if ((uint32_t)cpu_topo.socket[s][i][1] == lcore_id) {
+				snprintf(dst, len, "%us%uh", i, s);
+				return 0;
+			}
+		}
+	}
+
+	return -1;
 }
 
 static int get_lcore_id(uint32_t socket_id, uint32_t core_id, int ht)
@@ -1137,11 +1161,11 @@ int add_port_name(uint32_t val, const char *str2)
 	return 0;
 }
 
-int set_self_var(const uint32_t val)
+int set_self_var(const char *str)
 {
 	for (uint8_t i = 0; i < nb_vars; ++i) {
 		if (!strcmp("$self", vars[i].name)) {
-			sprintf(vars[i].val, "%u", val);
+			sprintf(vars[i].val, "%s", str);
 			return 0;
 		}
 	}
@@ -1149,7 +1173,7 @@ int set_self_var(const uint32_t val)
 	struct var *v = &vars[nb_vars];
 
 	strncpy(v->name, "$self", strlen("$self"));
-	sprintf(v->val, "%u", val);
+	sprintf(v->val, "%s", str);
 	nb_vars++;
 
 	return 0;
@@ -1230,10 +1254,27 @@ static int read_cores_present(uint32_t *cores, int max_cores, int *res)
 	return 0;
 }
 
+static int set_dummy_topology(void)
+{
+	int core_count = 0;
+
+	for (int s = 0; s < MAX_SOCKETS; s++) {
+		for (int i = 0; i < 32; ++i) {
+			cpu_topo.socket[s][i][0] = core_count++;
+			cpu_topo.socket[s][i][1] = core_count++;
+			cpu_topo.n_cores[s]++;
+		}
+	}
+	cpu_topo.n_sockets = MAX_SOCKETS;
+	return 0;
+}
+
 static int read_cpu_topology(void)
 {
 	if (cpu_topo.n_sockets != 0)
 		return 0;
+	if (prox_cfg.flags & DSF_USE_DUMMY_CPU_TOPO)
+		return set_dummy_topology();
 
 	uint32_t cores[RTE_MAX_LCORE];
 	int n_cores = 0;

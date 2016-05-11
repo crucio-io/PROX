@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -331,7 +331,6 @@ int bundle_proc_data(struct bundle_ctx *bundle, struct rte_mbuf *mbuf, struct l4
 {
 	int ret;
 	uint64_t next_tsc;
-	uint32_t retransmit = 0;
 
 	if (bundle->heap_ref.elem != NULL) {
 		heap_del(bundle->heap, &bundle->heap_ref);
@@ -340,8 +339,9 @@ int bundle_proc_data(struct bundle_ctx *bundle, struct rte_mbuf *mbuf, struct l4
 	if (bundle_iterate_streams(bundle, pool, seed, l4_stats) < 0)
 		return -1;
 
+	uint32_t retx_before = bundle->ctx.retransmits;
 	next_tsc = UINT64_MAX;
-	ret = bundle->ctx.stream_cfg->proc(&bundle->ctx, mbuf, l4_meta, &next_tsc, &retransmit);
+	ret = bundle->ctx.stream_cfg->proc(&bundle->ctx, mbuf, l4_meta, &next_tsc);
 
 	if (bundle->ctx.flags & STREAM_CTX_F_EXPIRED) {
 		bundle_expire(bundle, pool, l4_stats);
@@ -350,8 +350,7 @@ int bundle_proc_data(struct bundle_ctx *bundle, struct rte_mbuf *mbuf, struct l4
 	else if (next_tsc != UINT64_MAX) {
 		heap_add(bundle->heap, &bundle->heap_ref, rte_rdtsc() + next_tsc);
 	}
-	l4_stats->tcp_retransmits += retransmit;
-	bundle->ctx.retransmits += retransmit;
+	l4_stats->tcp_retransmits += bundle->ctx.retransmits - retx_before;
 
 	if (bundle_iterate_streams(bundle, pool, seed, l4_stats) > 0) {
 		if (bundle->heap_ref.elem != NULL) {

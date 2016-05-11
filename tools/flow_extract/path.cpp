@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -66,6 +66,15 @@ Path Path::add(const string& str) const
 	ss << path << str;
 
         return Path(ss.str());
+}
+
+Path Path::add(int number) const
+{
+	stringstream ss;
+
+	ss << path << number;
+
+	return Path(ss.str());
 }
 
 Path &Path::concat(const string &add)

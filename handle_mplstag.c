@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -128,7 +128,6 @@ static inline uint8_t handle_tagmpls(__attribute__((unused)) struct task_tagmpls
         PROX_ASSERT(peth);
         rte_prefetch0(peth);
 	uint32_t mpls = 0;
-	uint16_t l2_len = prox_get_l2_len(mbuf) + sizeof(struct mpls_hdr);
 
 	uint32_t tot_eth_addr_len = 2*sizeof(struct ether_addr);
 	rte_memcpy(peth, ((uint8_t *)peth) + sizeof(struct mpls_hdr), tot_eth_addr_len);

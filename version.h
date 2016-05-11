@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -37,7 +37,7 @@
 
 /* PROGRAM_NAME defined through Makefile */
 #define VERSION_MAJOR 0
-#define VERSION_MINOR 25
+#define VERSION_MINOR 27
 #define VERSION_REV   0
 
 #if VERSION_REV > 0

@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -539,6 +539,11 @@ static int lua_to_host_set(struct lua_State *L, enum lua_place from, const char 
 
 static int file_read_cached(const char *file_name, uint8_t **mem, uint32_t beg, uint32_t len, uint32_t socket, struct hash_set *hs)
 {
+	if (len == 0) {
+		*mem = 0;
+		return 0;
+	}
+
 	uint8_t *data_mem;
 
 	/* Since the configuration can reference the same file from

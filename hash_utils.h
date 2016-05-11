@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -33,8 +33,18 @@
 #define _HASH_UTILS_H_
 
 #include <rte_common.h>
+#include <rte_version.h>
 
 struct rte_table_hash;
+
+/* Take DPDK 2.2.0 ABI change into account: offset 0 now means first byte of mbuf struct
+ * see http://www.dpdk.org/browse/dpdk/commit/?id=ba92d511ddacf863fafaaa14c0577f30ee57d092
+ */
+#if RTE_VERSION >= RTE_VERSION_NUM(2,2,0,0)
+#define HASH_METADATA_OFFSET(offset)	(sizeof(struct rte_mbuf) + (offset))
+#else
+#define HASH_METADATA_OFFSET(offset)	(offset)
+#endif
 
 /* Wrap crc32 hash function to match that required for rte_table */
 uint64_t hash_crc32(void* key, uint32_t key_size, uint64_t seed);

@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -126,13 +126,35 @@ static void stats_cons_finish(void)
 	}
 }
 
+static void busy_wait_until(uint64_t deadline)
+{
+	while (rte_rdtsc() < deadline)
+		;
+}
+
+static void multiplexed_input_stats(uint64_t deadline)
+{
+	input_proc_until(deadline);
+
+	if (needs_refresh) {
+		needs_refresh = 0;
+		stats_cons_refresh();
+	}
+
+	if (rte_atomic32_read(&lsc)) {
+		rte_atomic32_dec(&lsc);
+		update_link_states();
+		stats_cons_refresh();
+	}
+}
+
 /* start main loop */
 void __attribute__((noreturn)) run(uint32_t flags)
 {
 	uint64_t cur_tsc;
 	uint64_t next_update;
 	uint64_t stop_tsc = 0;
-	int32_t lsc_local;
+	const uint64_t update_interval_threshold = usec_to_tsc(1);
 
 	if (flags & DSF_LISTEN_TCP)
 		PROX_PANIC(reg_input_tcp(), "Failed to start listening on TCP port 8474: %s\n", strerror(errno));
@@ -140,7 +162,7 @@ void __attribute__((noreturn)) run(uint32_t flags)
 		PROX_PANIC(reg_input_uds(), "Failed to start listening on UDS /tmp/prox.sock: %s\n", strerror(errno));
 
 	if (prox_cfg.use_stats_logger)
-		stats_cons_add(&stats_cons_log);
+		stats_cons_add(stats_cons_log_get());
 
 	stats_init(prox_cfg.start_time, prox_cfg.duration_time);
 	stats_update(STATS_CONS_F_ALL);
@@ -172,62 +194,32 @@ void __attribute__((noreturn)) run(uint32_t flags)
 	stats_cons_notify();
 	stats_cons_refresh();
 
-	cur_tsc = rte_rdtsc();
-
 	update_interval = str_to_tsc(prox_cfg.update_interval_str);
 	next_update = cur_tsc + update_interval;
 
-	/* If update interval is below one usec, disable input handling
-	   and use busy-wait instead of sleep. */
-	if (update_interval < usec_to_tsc(1)) {
-		while (stop_prox == 0) {
-			while (rte_rdtsc() < next_update)
-				;
-			next_update = cur_tsc + update_interval;
+	while (stop_prox == 0) {
 
-			stats_update(stats_cons_flags);
-			stats_cons_notify();
+		if (update_interval < update_interval_threshold)
+			busy_wait_until(next_update);
+		else
+			multiplexed_input_stats(next_update);
 
-			if (stop_tsc && cur_tsc >= stop_tsc) {
-				stop_prox = 1;
-			}
+		next_update += update_interval;
+
+		stats_update(stats_cons_flags);
+		stats_cons_notify();
+
+		if (stop_tsc && rte_rdtsc() >= stop_tsc) {
+			stop_prox = 1;
 		}
 	}
-	else {
-		/* Multiplex input handling, statistics gathering and
-		   statistics consumption. */
-		while (stop_prox == 0) {
-			input_proc_until(next_update);
 
-			next_update += update_interval;
-
-			if (needs_refresh) {
-				needs_refresh = 0;
-				stats_cons_refresh();
-			}
-
-			lsc_local = rte_atomic32_read(&lsc);
-
-			if (rte_atomic32_read(&lsc)) {
-				rte_atomic32_dec(&lsc);
-				update_link_states();
-				stats_cons_refresh();
-			}
-
-			stats_update(stats_cons_flags);
-			stats_cons_notify();
-
-			if (stop_tsc && cur_tsc >= stop_tsc) {
-				stop_prox = 1;
-			}
-		}
-	}
+	stats_cons_finish();
 
 	if (prox_cfg.flags & DSF_WAIT_ON_QUIT) {
 		stop_core_all(-1);
 	}
 
-	stats_cons_finish();
 	if (prox_cfg.logbuf) {
 		file_print(prox_cfg.logbuf);
 	}

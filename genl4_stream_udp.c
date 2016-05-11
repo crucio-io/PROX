@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -37,8 +37,18 @@ int stream_udp_is_ended(struct stream_ctx *ctx)
 	return ctx->cur_action == ctx->stream_cfg->n_actions;
 }
 
-int stream_udp_proc(struct stream_ctx *ctx, struct rte_mbuf *mbuf, struct l4_meta *l4_meta, uint64_t *next_tsc, __attribute__((unused)) uint32_t *retransmit)
+static void update_token_times(struct stream_ctx *ctx)
 {
+	uint64_t now = rte_rdtsc();
+
+	token_time_update(&ctx->token_time_other, now);
+	token_time_update(&ctx->token_time, now);
+}
+
+int stream_udp_proc(struct stream_ctx *ctx, struct rte_mbuf *mbuf, struct l4_meta *l4_meta, uint64_t *next_tsc)
+{
+	update_token_times(ctx);
+
 	if (l4_meta) {
 		enum l4gen_peer peer = ctx->stream_cfg->actions[ctx->cur_action].peer;
 		plogx_dbg("Consuming UDP data\n");
@@ -67,7 +77,6 @@ int stream_udp_proc(struct stream_ctx *ctx, struct rte_mbuf *mbuf, struct l4_met
 		if (stream_udp_is_ended(ctx))
 			return -1;
 
-		token_time_update(&ctx->token_time_other, rte_rdtsc());
 		token_time_take(&ctx->token_time_other, mbuf_wire_size(mbuf));
 		/* Time before next packet is expected to
 		   arrive. Note, addition amount of time is accounted
@@ -86,7 +95,6 @@ int stream_udp_proc(struct stream_ctx *ctx, struct rte_mbuf *mbuf, struct l4_met
 		return -1;
 	}
 
-	token_time_update(&ctx->token_time, rte_rdtsc());
 	uint64_t wait_tsc = token_time_tsc_until_full(&ctx->token_time);
 
 	if (wait_tsc != 0) {
@@ -137,7 +145,6 @@ int stream_udp_proc(struct stream_ctx *ctx, struct rte_mbuf *mbuf, struct l4_met
 		*next_tsc = token_time_tsc_until_full(&ctx->token_time);
 	}
 	else {
-		token_time_update(&ctx->token_time_other, rte_rdtsc());
 		uint64_t wait = token_time_tsc_until_full(&ctx->token_time_other);
 		*next_tsc = wait + ctx->stream_cfg->tsc_timeout;
 	}

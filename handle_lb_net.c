@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -109,8 +109,8 @@ static struct rte_table_hash *setup_gre_to_wt_lookup(struct task_args *targ, uin
 		.n_buckets_ext = count >> 1,
 		.f_hash = hash_crc32,
 		.seed = 0,
-		.signature_offset = 0,
-		.key_offset = 0,
+		.signature_offset = HASH_METADATA_OFFSET(0),
+		.key_offset = HASH_METADATA_OFFSET(0),
 	};
 
 	ret = rte_table_hash_ext_dosig_ops.f_create(&table_hash_params, socket_id, sizeof(uint8_t));

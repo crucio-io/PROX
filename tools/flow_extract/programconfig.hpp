@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -51,6 +51,8 @@ public:
 	uint32_t max_streams;
 	uint32_t sampleCount;
 	uint32_t flowTableSize;
+	bool run_first_step;
+	bool write_pcaps;
 private:
 	int checkConfig();
 	string m_error;

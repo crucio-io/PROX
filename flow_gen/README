@@ -1,0 +1,62 @@
+##
+# Copyright(c) 2010-2016 Intel Corporation.
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#
+#   * Redistributions of source code must retain the above copyright
+#     notice, this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright
+#     notice, this list of conditions and the following disclaimer in
+#     the documentation and/or other materials provided with the
+#     distribution.
+#   * Neither the name of Intel Corporation nor the names of its
+#     contributors may be used to endorse or promote products derived
+#     from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+# A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+# OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+# SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+# LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+# DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+# THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+##
+
+While it is possible to manually run stateful traffic generation as
+described below, it is recommended to use the provided dpi scripts
+available in the help-scripts directory..
+
+Before running flow based generation, a traffic profile needs to be
+extracted and copied into this directory. This is done by running the
+flow extract tool. An example of running the tool is shown below. For
+more details on the flow extract tool, please read the provided help
+by running the tool with the -h argument.
+
+./build/flowextract2 -s 500000 -i input.pcap -o output_directory
+
+After the output has been copied to this directory, the configuration
+can be launched as shown below:
+
+./build/prox -f flow_gen/flow_gen_4ports.cfg -e \
+	     -q max_setup_rate=2000 \
+	     -q connections=50000 \
+	     -q ss=19.46 \
+	     -q test_system_id=0
+
+The parameters provided through -q depend on the traffic profile. The
+following command can be used to find the maximum value of ss:
+
+./build/prox -f flow_gen/flow_gen_4ports.cfg -e \
+	     -q max_ss_and_quit=true \
+	     -q test_system_id=0
+
+This will cause prox to read the traffic profile, calculate the maximum
+value and quit immediately. No packets will be sent and the value for
+ss will be printed on stdout.

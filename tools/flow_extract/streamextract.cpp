@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -223,11 +223,76 @@ static void printPorts(const vector<Bundle> &bundles)
 	}
 }
 
-int StreamExtract::writeToLua(const string& binFilePath, const Path &smallFinalBin, const string& luaFilePath)
+string StreamExtract::createStreamPcapFileName(int id)
+{
+	stringstream ss;
+
+	ss << cfg.path_dir_out << "/s" << id << ".pcap";
+
+	return ss.str();
+}
+
+int StreamExtract::writeToPcaps(const string &sourceFilePath, const set<uint32_t> &streamIDs)
+{
+	set<uint32_t>::const_iterator i = streamIDs.begin();
+
+	MappedFile mappedFile;
+	if (mappedFile.open(sourceFilePath)) {
+		cerr << "Failed to open file " << sourceFilePath << ":" << strerror(errno) << endl;
+		return -1;
+	}
+
+	PcapPkt::allocator = NULL;
+
+	Progress progress((uint64_t)mappedFile.getMapEnd() - (uint64_t)mappedFile.getMapBeg());
+	cout << "Writing  " << streamIDs.size() << " streams to pcaps" << endl;
+	uint8_t *data2 = mappedFile.getMapBeg();
+	while (data2 < mappedFile.getMapEnd()) {
+		uint32_t id = *reinterpret_cast<uint32_t *>(data2);
+
+		data2 += sizeof(id);
+		uint32_t pktCount = *reinterpret_cast<uint32_t *>(data2);
+		data2 += sizeof(pktCount);
+		Stream s(id, pktCount);
+		while (pktCount--) {
+			PcapPkt p(data2);
+
+			data2 += p.memSize();
+			s.addPkt(p);
+		}
+
+		while (i != streamIDs.end() && (*i) < id)
+			i++;
+		if (i == streamIDs.end())
+			break;
+		if (*i > id)
+			continue;
+
+		const string pcapPath = createStreamPcapFileName(id);
+
+		s.toPcap(pcapPath);
+		if (progress.couldRefresh()) {
+			progress.setProgress((uint64_t)data2 - (uint64_t)mappedFile.getMapBeg());
+			progress.refresh();
+			mappedFile.sync();
+		}
+	}
+
+	progress.setProgress(data2 - mappedFile.getMapBeg());
+	progress.refresh(true);
+
+	mappedFile.close();
+	return 0;
+}
+
+int StreamExtract::writeToLua(const string& binFilePath, const Path &smallFinalBin, const string& luaFilePath, const string &orderedTemp)
 {
 	vector<Bundle> bundles = createBundles(binFilePath);
 	vector<Bundle*> bundleSamples = takeSamples(bundles, cfg.sampleCount);
 	set<uint32_t> streamIDs = getBundleStreamIDs(bundleSamples);
+
+	if (cfg.write_pcaps)
+		writeToPcaps(orderedTemp, streamIDs);
 
 	ofstream outLua;
 	ofstream outSmallBin;
@@ -246,7 +311,7 @@ int StreamExtract::writeToLua(const string& binFilePath, const Path &smallFinalB
 		while (i != streamIDs.end() && (*i) < s.streamHdr.streamId)
 			i++;
 		if (i == streamIDs.end())
-		    break;
+			break;
 		if (*i > s.streamHdr.streamId)
 			continue;
 		s.calcOffsets(&outSmallBin);
@@ -328,21 +393,29 @@ int StreamExtract::run()
 	string orderedTemp = p.add("/a").str();
 
 	string finalBin = p.add("/b").str();
-	Path smallfinalBin = p.add("/bin_data").str();
+	Path smallfinalBin = p.add("/data.bin").str();
 	string luaFile = p.add("/cfg.lua").str();
 
-	// cout << "Writing to directory '" << p.str() << "'" << endl;
-	// cout << "Ordered streams '" << orderedTemp << "'" << endl;
-	// cout << "Final binary output '" << finalBin << "'" << endl;
-	// cout << "lua file '" << luaFile << "' will contain " << cfg.sampleCount << " bundles" << endl;
+	cout << "Writing to directory '" << p.str() << "'" << endl;
+	cout << "Ordered streams '" << orderedTemp << "'" << endl;
+	cout << "Final binary output '" << finalBin << "'" << endl;
+	cout << "lua file '" << luaFile << "' will contain " << cfg.sampleCount << " bundles" << endl;
 
-	// cout << "starting sorting" << endl;
-	// streamSorter.sort(cfg.path_file_in_pcap, orderedTemp);
-	// cout << "writing final binary file (converting format)" << endl;
-	// if (writeFinalBin(orderedTemp, finalBin))
-	// 	return -1;
+	if (cfg.run_first_step) {
+		cout << "starting sorting" << endl;
+		streamSorter.sort(cfg.path_file_in_pcap, orderedTemp);
+		cout << "writing final binary file (converting format)" << endl;
+		if (writeFinalBin(orderedTemp, finalBin))
+			return -1;
+	} else {
+		cout << "Skipping first step" << endl;
+		if (!Path(finalBin).isFile()) {
+			cerr << "File is missing:" << finalBin << endl;
+			return -1;
+		}
+	}
 	cout << "writing Lua '" << luaFile << "'" << endl;
-	if (writeToLua(finalBin, smallfinalBin, luaFile))
+	if (writeToLua(finalBin, smallfinalBin, luaFile, orderedTemp))
 		return -1;
 	return 0;
 }

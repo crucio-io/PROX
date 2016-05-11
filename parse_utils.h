@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -107,11 +107,14 @@ int parse_port_name_list(uint32_t *val, uint32_t *tot, uint8_t max_vals, const c
    contain at least enough entries as port ids. */
 int parse_remap(uint8_t *mapping, const char *str);
 
+/* Convert an lcore_id to socket notation */
+int lcore_to_socket_core_ht(uint32_t lcore_id, char *dst, size_t len);
+
 int add_port_name(uint32_t val, const char *str);
 
 /* The $self variable is something that can change its value (i.e. its
    value represents the core that is currently being parsed). */
-int set_self_var(const uint32_t val);
+int set_self_var(const char *str);
 
 int add_var(const char* name, const char *val, uint8_t cli);
 

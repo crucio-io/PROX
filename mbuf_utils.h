@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -37,14 +37,6 @@
 #include <rte_version.h>
 #include <rte_ether.h>
 
-static uint16_t prox_get_l2_len(struct rte_mbuf *mbuf)
-{
-#if RTE_VERSION >= RTE_VERSION_NUM(1,8,0,0)
-	return  (mbuf->tx_offload & 0x7F);
-#else
-	return ((mbuf->pkt.vlan_macip.data >> 9) & 0x7F);
-#endif
-}
 static void init_mbuf_seg(struct rte_mbuf *mbuf)
 {
 #if RTE_VERSION >= RTE_VERSION_NUM(1,8,0,0)

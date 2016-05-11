@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -148,7 +148,7 @@ void lcore_cfg_alloc_hp(void);
 /* Returns the next active lconf/targ pair. If *lconf = NULL, the
    first active lconf/targ pair is returned. If the last lconf/targ
    pair is passed, the function returns non-zero. */
-int core_targ_next(struct lcore_cfg **lconf, struct task_args **targ);
+int core_targ_next(struct lcore_cfg **lconf, struct task_args **targ, const int with_master);
 /* Same as above, but uses non-huge page memory (used before
    lcore_cfg_alloc_hp is called). */
 int core_targ_next_early(struct lcore_cfg **lconf, struct task_args **targ);

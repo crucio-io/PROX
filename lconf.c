@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -41,7 +41,7 @@ struct lcore_cfg *lcore_cfg;
 /* only used at initialization time */
 struct lcore_cfg  lcore_cfg_init[RTE_MAX_LCORE];
 
-static int core_targ_next_from(struct lcore_cfg **lconf, struct task_args **targ, struct lcore_cfg *lcore_cfg)
+static int core_targ_next_from(struct lcore_cfg **lconf, struct task_args **targ, struct lcore_cfg *lcore_cfg, const int with_master)
 {
 	uint32_t lcore_id, task_id;
 
@@ -53,7 +53,7 @@ static int core_targ_next_from(struct lcore_cfg **lconf, struct task_args **targ
 			*targ = &lcore_cfg[lcore_id].targs[task_id + 1];
 			return 0;
 		} else {
-			if (prox_core_next(&lcore_id, 0))
+			if (prox_core_next(&lcore_id, with_master))
 				return -1;
 			*lconf = &lcore_cfg[lcore_id];
 			*targ = &lcore_cfg[lcore_id].targs[0];
@@ -62,7 +62,7 @@ static int core_targ_next_from(struct lcore_cfg **lconf, struct task_args **targ
 	} else {
 		lcore_id = -1;
 
-		if (prox_core_next(&lcore_id, 0))
+		if (prox_core_next(&lcore_id, with_master))
 			return -1;
 		*lconf = &lcore_cfg[lcore_id];
 		*targ = &lcore_cfg[lcore_id].targs[0];
@@ -70,14 +70,14 @@ static int core_targ_next_from(struct lcore_cfg **lconf, struct task_args **targ
 	}
 }
 
-int core_targ_next(struct lcore_cfg **lconf, struct task_args **targ)
+int core_targ_next(struct lcore_cfg **lconf, struct task_args **targ, const int with_master)
 {
-	return core_targ_next_from(lconf, targ, lcore_cfg);
+	return core_targ_next_from(lconf, targ, lcore_cfg, with_master);
 }
 
 int core_targ_next_early(struct lcore_cfg **lconf, struct task_args **targ)
 {
-	return core_targ_next_from(lconf, targ, lcore_cfg_init);
+	return core_targ_next_from(lconf, targ, lcore_cfg_init, 0);
 }
 
 struct task_args *core_targ_get(uint32_t lcore_id, uint32_t task_id)

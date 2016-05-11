@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -125,8 +125,8 @@ static void init_lookup_table(struct task_ipv6_tun_base* ptask, struct task_args
 			.n_entries_ext = (table->num_binding_entries * 2) >> 1,
 			.f_hash = hash_crc32,
 			.seed = 0,
-			.signature_offset = 8,  // Ignored for dosig tables
-			.key_offset = 0,
+			.signature_offset = HASH_METADATA_OFFSET(8),  // Ignored for dosig tables
+			.key_offset = HASH_METADATA_OFFSET(0),
 		};
                 plogx_info("IPv6 Tunnel allocating lookup table on socket %d\n", socket_id);
 		ptask->lookup_table = rte_table_hash_key8_ext_dosig_ops.

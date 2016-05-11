@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -563,7 +563,6 @@ static int get_core_cfg(unsigned sindex, char *str, void *data)
 
 	lconf = &lconf[ncore];
 
-
 	for (uint32_t i = 0; i < RTE_DIM(core_cfg_depr); ++i) {
 		if (STR_EQ(str, core_cfg_depr[i].opt)) {
 			set_errf("Option '%s' is deprecated%s%s",
@@ -572,7 +571,9 @@ static int get_core_cfg(unsigned sindex, char *str, void *data)
 		}
 	}
 
-	set_self_var(lconf->id);
+	char buff[128];
+	lcore_to_socket_core_ht(ncore, buff, sizeof(buff));
+	set_self_var(buff);
 	if (STR_EQ(str, "task")) {
 
 		uint32_t val = atoi(pkey);
@@ -1436,7 +1437,7 @@ int prox_parse_args(int argc, char **argv)
 	}
 	plog_info("\n");
 
-	while ((opt = getopt(argc, argv, "f:dnpo:tkuar:esiw:l:v:q:")) != EOF) {
+	while ((opt = getopt(argc, argv, "f:dnzpo:tkuar:esiw:l:v:q:")) != EOF) {
 		switch (opt) {
 		case 'f':
 			/* path to config file */
@@ -1467,6 +1468,10 @@ int prox_parse_args(int argc, char **argv)
 			prox_cfg.flags |= DSF_DAEMON;
 			prox_cfg.ui = PROX_UI_NONE;
 			break;
+                case 'z':
+                        prox_cfg.flags |= DSF_USE_DUMMY_CPU_TOPO;
+			prox_cfg.flags |= DSF_CHECK_INIT;
+                        break;
 		case 'n':
 			prox_cfg.flags |= DSF_USE_DUMMY_DEVICES;
 			break;
@@ -1727,10 +1732,15 @@ int prox_setup_rte(const char *prog_name)
 	/* create mask of used cores */
 	plog_info("=== Setting up RTE EAL ===\n");
 
-	prox_core_to_hex(tmp, sizeof(tmp), 0);
-	plog_info("\tWorker threads core mask is %s\n", tmp);
-	prox_core_to_hex(tmp, sizeof(tmp), 1);
-	plog_info("\tWith master core index %u, full core mask is %s\n", prox_cfg.master, tmp);
+	if (prox_cfg.flags & DSF_USE_DUMMY_CPU_TOPO) {
+		plog_info("Using dummy cpu topology\n");
+		snprintf(tmp, sizeof(tmp), "0x1");
+	} else {
+		prox_core_to_hex(tmp, sizeof(tmp), 0);
+		plog_info("\tWorker threads core mask is %s\n", tmp);
+		prox_core_to_hex(tmp, sizeof(tmp), 1);
+		plog_info("\tWith master core index %u, full core mask is %s\n", prox_cfg.master, tmp);
+	}
 
 	/* fake command line parameters for rte_eal_init() */
 	int argc = 0;
@@ -1738,7 +1748,10 @@ int prox_setup_rte(const char *prog_name)
 	sprintf(rte_arg[++argc], "-c%s", tmp);
 	rte_argv[argc] = rte_arg[argc];
 #if RTE_VERSION >= RTE_VERSION_NUM(1,8,0,0)
-	sprintf(rte_arg[++argc], "--master-lcore=%u", prox_cfg.master);
+	if (prox_cfg.flags & DSF_USE_DUMMY_CPU_TOPO)
+		sprintf(rte_arg[++argc], "--master-lcore=%u", 0);
+	else
+		sprintf(rte_arg[++argc], "--master-lcore=%u", prox_cfg.master);
 	rte_argv[argc] = rte_arg[argc];
 #else
 	/* For old DPDK versions, the master core had to be the first
@@ -1833,6 +1846,9 @@ int prox_setup_rte(const char *prog_name)
 	}
 	plog_info("\tEAL Initialized\n");
 
+	if (prox_cfg.flags & DSF_USE_DUMMY_CPU_TOPO)
+		return 0;
+
 	/* check if all active cores are in enabled in DPDK */
 	for (uint32_t lcore_id = 0; lcore_id < RTE_MAX_LCORE; ++lcore_id) {
 		if (lcore_id == prox_cfg.master) {
@@ -1840,10 +1856,11 @@ int prox_setup_rte(const char *prog_name)
 				return -1;
 		}
 		else if (rte_lcore_is_enabled(lcore_id) != prox_core_active(lcore_id, 0)) {
+			plog_err("\tFailed to enable lcore %u\n", lcore_id);
 			return -1;
 		}
 		else if (lcore_cfg_init[lcore_id].n_tasks_all != 0 && !rte_lcore_is_enabled(lcore_id)) {
-			plog_err("\tfailed to enable lcore %u\n", lcore_id);
+			plog_err("\tFailed to enable lcore %u\n", lcore_id);
 			return -1;
 		}
 	}

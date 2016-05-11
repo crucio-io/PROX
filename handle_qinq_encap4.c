@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -234,8 +234,8 @@ void init_qinq_gre_table(struct task_args *targ, struct qinq_gre_map *qinq_gre_m
 		.n_entries_ext = n_entries >> 1,
 		.f_hash = hash_crc32,
 		.seed = 0,
-		.signature_offset = 8,
-		.key_offset = 0,
+		.signature_offset = HASH_METADATA_OFFSET(8),
+		.key_offset = HASH_METADATA_OFFSET(0),
 	};
 
 	qinq_gre_table = rte_table_hash_key8_ext_dosig_ops.
@@ -340,8 +340,8 @@ void init_cpe4_table(struct task_args *targ)
 		.n_entries_ext = n_entries >> 1,
 		.f_hash = hash_crc32,
 		.seed = 0,
-		.signature_offset = 8,
-		.key_offset = 0,
+		.signature_offset = HASH_METADATA_OFFSET(8),
+		.key_offset = HASH_METADATA_OFFSET(0),
 	};
 	size_t entry_size = sizeof(struct cpe_data);
 	if (!rte_is_power_of_2(entry_size)) {

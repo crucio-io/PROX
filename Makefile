@@ -81,6 +81,10 @@ ifeq ($(PROX_STATS),y)
 CFLAGS += -DPROX_STATS
 endif
 
+ifeq ($(DPI_STATS),y)
+CFLAGS += -DDPI_STATS
+endif
+
 ifeq ($(HW_DIRECT_STATS),y)
 CFLAGS += -DPROX_HW_DIRECT_STATS
 endif

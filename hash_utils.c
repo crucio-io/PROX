@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -36,6 +36,8 @@
 
 #include "hash_utils.h"
 
+/* These opaque structure definitions were copied from DPDK lib/librte_table/rte_table_hash_key8.c */
+
 struct rte_bucket_4_8 {
 	/* Cache line 0 */
 	uint64_t signature;
@@ -49,18 +51,9 @@ struct rte_bucket_4_8 {
 	uint8_t data[0];
 };
 
-struct bucket {
-	union {
-		uintptr_t next;
-		uint64_t lru_list;
-	};
-	uint16_t sig[4];
-	uint32_t key_pos[4];
-};
-
-struct rte_table_hash {
+struct rte_table_hash_key8 {
 #if RTE_VERSION >= RTE_VERSION_NUM(2,1,0,0)
-       struct rte_table_stats stats;
+	struct rte_table_stats stats;
 #endif
 	/* Input parameters */
 	uint32_t n_buckets;
@@ -70,6 +63,9 @@ struct rte_table_hash {
 	uint32_t bucket_size;
 	uint32_t signature_offset;
 	uint32_t key_offset;
+#if RTE_VERSION >= RTE_VERSION_NUM(2,2,0,0)
+	uint64_t key_mask;
+#endif
 	rte_table_hash_op_hash f_hash;
 	uint64_t seed;
 
@@ -82,6 +78,20 @@ struct rte_table_hash {
 	uint8_t memory[0] __rte_cache_aligned;
 };
 
+/* These opaque structure definitions were copied from DPDK lib/librte_table/rte_table_hash_ext.c */
+
+struct bucket {
+	union {
+		uintptr_t next;
+		uint64_t lru_list;
+	};
+	uint16_t sig[4];
+	uint32_t key_pos[4];
+};
+
+#define BUCKET_NEXT(bucket)						\
+	((void *) ((bucket)->next & (~1LU)))
+
 struct grinder {
 	struct bucket *bkt;
 	uint64_t sig;
@@ -90,6 +100,9 @@ struct grinder {
 };
 
 struct rte_table_hash_ext {
+#if RTE_VERSION >= RTE_VERSION_NUM(2,1,0,0)
+	struct rte_table_stats stats;
+#endif
 	/* Input parameters */
 	uint32_t key_size;
 	uint32_t entry_size;
@@ -122,29 +135,6 @@ struct rte_table_hash_ext {
 	/* Table memory */
 	uint8_t memory[0] __rte_cache_aligned;
 };
-
-
-
-#define BUCKET_NEXT(bucket)						\
-	((void *) ((bucket)->next & (~1LU)))
-
-#define BUCKET_NEXT_VALID(bucket)					\
-	((bucket)->next & 1LU)
-
-#define BUCKET_NEXT_SET(bucket, bucket_next)				\
-do									\
-	(bucket)->next = (((uintptr_t) ((void *) (bucket_next))) | 1LU);\
-while (0)
-
-#define BUCKET_NEXT_SET_NULL(bucket)					\
-do									\
-	(bucket)->next = 0;						\
-while (0)
-
-#define BUCKET_NEXT_COPY(bucket, bucket2)				\
-do									\
-	(bucket)->next = (bucket2)->next;				\
-while (0)
 
 
 uint64_t get_bucket(void* table, uint32_t bucket_idx, void** key, void** entries)
@@ -182,7 +172,7 @@ uint64_t get_bucket(void* table, uint32_t bucket_idx, void** key, void** entries
 uint64_t get_bucket_key8(void* table, uint32_t bucket_idx, void** key, void** entries)
 {
 	struct rte_bucket_4_8 *bucket, *bucket0;
-	struct rte_table_hash* f = table;
+	struct rte_table_hash_key8* f = table;
 	uint8_t n = 0;
 
 	bucket0 = (struct rte_bucket_4_8 *) &f->memory[bucket_idx * f->bucket_size];

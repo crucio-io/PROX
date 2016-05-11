@@ -32,6 +32,7 @@
 SOURCES = main.cpp
 SOURCES += streamextract.cpp
 SOURCES += pcapreader.cpp
+SOURCES += pcapwriter.cpp
 SOURCES += timestamp.cpp
 SOURCES += pcappkt.cpp
 SOURCES += netsocket.cpp

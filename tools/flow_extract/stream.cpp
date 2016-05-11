@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -33,6 +33,7 @@
 #include <iomanip>
 #include <arpa/inet.h>
 
+#include "pcapwriter.hpp"
 #include "stream.hpp"
 
 Stream::Stream(uint32_t id, uint32_t sizeHint)
@@ -40,6 +41,7 @@ Stream::Stream(uint32_t id, uint32_t sizeHint)
 {
 	m_client.pkts.reserve(sizeHint / 2);
 	m_server.pkts.reserve(sizeHint / 2);
+	m_pkts.reserve(sizeHint);
 }
 
 bool Stream::isClient(const PcapPkt &pkt) const
@@ -75,6 +77,8 @@ void Stream::addPkt(const PcapPkt &pkt)
 	if (p.len) {
 		addAction(half, p, isClientPkt);
 	}
+
+	m_pkts.push_back(pkt);
 }
 
 void Stream::addAction(HalfStream *half, HalfStream::Action::Part p, bool isClientPkt)
@@ -169,4 +173,14 @@ void Stream::toFile(ofstream *f)
 	serverHdrToFile(f);
 	contentsToFile(f, true);
 	contentsToFile(f, false);
+}
+
+void Stream::toPcap(const string& outFile)
+{
+	PcapWriter pw;
+
+	pw.open(outFile);
+	for (size_t i = 0; i < m_pkts.size(); ++i)
+		pw.write(m_pkts[i]);
+	pw.close();
 }

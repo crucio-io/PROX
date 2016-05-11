@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -52,10 +52,12 @@ static uint64_t tcp_resched_timeout(const struct stream_ctx *ctx)
 	return delay;
 }
 
-static void tcp_retx_timeout_start(struct stream_ctx *ctx, uint64_t now, uint64_t *next_tsc)
+static void tcp_retx_timeout_start(struct stream_ctx *ctx, uint64_t *next_tsc)
 {
+	uint64_t now = rte_rdtsc();
+
 	*next_tsc = tcp_retx_timeout(ctx);
-	ctx->sched_tsc = rte_rdtsc() + *next_tsc;
+	ctx->sched_tsc = now + *next_tsc;
 }
 
 static int tcp_retx_timeout_occured(const struct stream_ctx *ctx, uint64_t now)
@@ -68,9 +70,9 @@ static void tcp_retx_timeout_resume(const struct stream_ctx *ctx, uint64_t now, 
 	*next_tsc = ctx->sched_tsc - now;
 }
 
-static void tcp_set_retransmit(uint32_t *retransmit)
+static void tcp_set_retransmit(struct stream_ctx *ctx)
 {
-	*retransmit = 1;
+	ctx->retransmits++;
 }
 
 struct tcp_option {
@@ -422,6 +424,10 @@ static int stream_tcp_proc_in(struct stream_ctx *ctx, struct l4_meta *l4_meta)
 
 	if (progress_ack || progress_seq) {
 		ctx->same_state = 0;
+		ctx->flags |= STREAM_CTX_F_LAST_RX_PKT_MADE_PROGRESS;
+	}
+	else {
+		ctx->flags &= ~STREAM_CTX_F_LAST_RX_PKT_MADE_PROGRESS;
 	}
 	return 0;
 }
@@ -483,7 +489,7 @@ static int stream_tcp_proc_out_listen(struct stream_ctx *ctx, struct rte_mbuf *m
 	return 0;
 }
 
-static int stream_tcp_proc_out_syn_sent(struct stream_ctx *ctx, struct rte_mbuf *mbuf, uint64_t *next_tsc, uint32_t *retransmit)
+static int stream_tcp_proc_out_syn_sent(struct stream_ctx *ctx, struct rte_mbuf *mbuf, uint64_t *next_tsc)
 {
 	uint64_t wait_tsc = token_time_tsc_until_full(&ctx->token_time);
 
@@ -496,7 +502,7 @@ static int stream_tcp_proc_out_syn_sent(struct stream_ctx *ctx, struct rte_mbuf 
 		plogx_dbg("Retransmit SYN\n");
 		/* Did not get packet, send syn again and keep state (waiting for ACK). */
 		++ctx->same_state;
-		tcp_set_retransmit(retransmit);
+		tcp_set_retransmit(ctx);
 		return stream_tcp_proc_out_closed(ctx, mbuf, next_tsc);
 	}
 
@@ -527,7 +533,7 @@ static int stream_tcp_proc_out_syn_sent(struct stream_ctx *ctx, struct rte_mbuf 
 	return 0;
 }
 
-static int stream_tcp_proc_out_syn_recv(struct stream_ctx *ctx, struct rte_mbuf *mbuf, uint64_t *next_tsc, uint32_t *retransmit)
+static int stream_tcp_proc_out_syn_recv(struct stream_ctx *ctx, struct rte_mbuf *mbuf, uint64_t *next_tsc)
 {
 	uint64_t wait_tsc = token_time_tsc_until_full(&ctx->token_time);
 
@@ -577,7 +583,7 @@ static int stream_tcp_proc_out_syn_recv(struct stream_ctx *ctx, struct rte_mbuf 
 		   sent is not yet ACK'ed. So, retransmit the SYN/ACK. */
 		plogx_dbg("Retransmit SYN/ACK\n");
 		++ctx->same_state;
-		tcp_set_retransmit(retransmit);
+		tcp_set_retransmit(ctx);
 		ctx->next_seq = ctx->ackd_seq;
 		create_tcp_pkt(ctx, mbuf, TCP_SYN_FLAG | TCP_ACK_FLAG, 0, 0);
 		token_time_take(&ctx->token_time, mbuf_wire_size(mbuf));
@@ -586,7 +592,7 @@ static int stream_tcp_proc_out_syn_recv(struct stream_ctx *ctx, struct rte_mbuf 
 	}
 }
 
-static int stream_tcp_proc_out_estab_tx(struct stream_ctx *ctx, struct rte_mbuf *mbuf, uint64_t *next_tsc, uint32_t *retransmit)
+static int stream_tcp_proc_out_estab_tx(struct stream_ctx *ctx, struct rte_mbuf *mbuf, uint64_t *next_tsc)
 {
 	uint64_t wait_tsc = token_time_tsc_until_full(&ctx->token_time);
 
@@ -646,6 +652,11 @@ static int stream_tcp_proc_out_estab_tx(struct stream_ctx *ctx, struct rte_mbuf 
 		else {
 			uint64_t now = rte_rdtsc();
 
+			if ((ctx->flags & STREAM_CTX_F_LAST_RX_PKT_MADE_PROGRESS) && token_time_tsc_until_full(&ctx->token_time_other) != 0) {
+				tcp_retx_timeout_start(ctx, next_tsc);
+				ctx->flags &= ~STREAM_CTX_F_LAST_RX_PKT_MADE_PROGRESS;
+				return -1;
+			}
 			/* This function might be called due to packet
 			   reception. In that case, cancel here and
 			   wait until the timeout really occurs before
@@ -656,7 +667,7 @@ static int stream_tcp_proc_out_estab_tx(struct stream_ctx *ctx, struct rte_mbuf 
 			}
 
 			ctx->same_state++;
-			tcp_set_retransmit(retransmit);
+			tcp_set_retransmit(ctx);
 			/* This possibly means that now retransmit is resumed half-way in the action. */
 			plogx_dbg("Retransmit: outstanding = %d\n", outstanding_bytes);
 			plogx_dbg("Assuming %d->%d lost\n", ctx->ackd_seq, ctx->next_seq);
@@ -685,12 +696,12 @@ static int stream_tcp_proc_out_estab_tx(struct stream_ctx *ctx, struct rte_mbuf 
 	if (ctx->flags & STREAM_CTX_F_MORE_DATA)
 		*next_tsc = tcp_resched_timeout(ctx);
 	else
-		tcp_retx_timeout_start(ctx, rte_rdtsc(), next_tsc);
+		tcp_retx_timeout_start(ctx, next_tsc);
 
 	return 0;
 }
 
-static int stream_tcp_proc_out_estab_rx(struct stream_ctx *ctx, struct rte_mbuf *mbuf, uint64_t *next_tsc, uint32_t *retransmit)
+static int stream_tcp_proc_out_estab_rx(struct stream_ctx *ctx, struct rte_mbuf *mbuf, uint64_t *next_tsc)
 {
 	uint64_t wait_tsc = token_time_tsc_until_full(&ctx->token_time);
 
@@ -721,7 +732,7 @@ static int stream_tcp_proc_out_estab_rx(struct stream_ctx *ctx, struct rte_mbuf 
 		ctx->flags &= ~STREAM_CTX_F_NEW_DATA;
 	else {
 		ctx->same_state++;
-		tcp_set_retransmit(retransmit);
+		tcp_set_retransmit(ctx);
 		plogx_dbg("state++ (ack = %d)\n", ctx->recv_seq);
 	}
 
@@ -731,13 +742,13 @@ static int stream_tcp_proc_out_estab_rx(struct stream_ctx *ctx, struct rte_mbuf 
 	return 0;
 }
 
-static int stream_tcp_proc_out_estab(struct stream_ctx *ctx, struct rte_mbuf *mbuf, uint64_t *next_tsc, uint32_t *retransmit)
+static int stream_tcp_proc_out_estab(struct stream_ctx *ctx, struct rte_mbuf *mbuf, uint64_t *next_tsc)
 {
 	if (ctx->stream_cfg->actions[ctx->cur_action].peer == ctx->peer) {
-		return stream_tcp_proc_out_estab_tx(ctx, mbuf, next_tsc, retransmit);
+		return stream_tcp_proc_out_estab_tx(ctx, mbuf, next_tsc);
 	}
 	else {
-		return stream_tcp_proc_out_estab_rx(ctx, mbuf, next_tsc, retransmit);
+		return stream_tcp_proc_out_estab_rx(ctx, mbuf, next_tsc);
 	}
 }
 
@@ -760,7 +771,7 @@ static int stream_tcp_proc_out_close_wait(struct stream_ctx *ctx, struct rte_mbu
 	return 0;
 }
 
-static int stream_tcp_proc_out_last_ack(struct stream_ctx *ctx, struct rte_mbuf *mbuf, uint64_t *next_tsc, uint32_t *retransmit)
+static int stream_tcp_proc_out_last_ack(struct stream_ctx *ctx, struct rte_mbuf *mbuf, uint64_t *next_tsc)
 {
 	if (ctx->ackd_seq == ctx->next_seq) {
 		plogx_dbg("Last ACK received\n");
@@ -774,11 +785,16 @@ static int stream_tcp_proc_out_last_ack(struct stream_ctx *ctx, struct rte_mbuf 
 			*next_tsc = wait_tsc;
 			return -1;
 		}
+		if (ctx->flags & STREAM_CTX_F_LAST_RX_PKT_MADE_PROGRESS) {
+			ctx->flags &= ~STREAM_CTX_F_LAST_RX_PKT_MADE_PROGRESS;
+			*next_tsc = tcp_retx_timeout(ctx);
+			return -1;
+		}
 
 		plogx_dbg("Retransmit!\n");
 		ctx->next_seq = ctx->ackd_seq;
 		ctx->same_state++;
-		tcp_set_retransmit(retransmit);
+		tcp_set_retransmit(ctx);
 		create_tcp_pkt(ctx, mbuf, TCP_ACK_FLAG | TCP_FIN_FLAG, 0, 0);
 		token_time_take(&ctx->token_time, mbuf_wire_size(mbuf));
 		*next_tsc = tcp_retx_timeout(ctx);
@@ -786,7 +802,7 @@ static int stream_tcp_proc_out_last_ack(struct stream_ctx *ctx, struct rte_mbuf 
 	}
 }
 
-static int stream_tcp_proc_out_fin_wait(struct stream_ctx *ctx, struct rte_mbuf *mbuf, uint64_t *next_tsc, uint32_t *retransmit)
+static int stream_tcp_proc_out_fin_wait(struct stream_ctx *ctx, struct rte_mbuf *mbuf, uint64_t *next_tsc)
 {
 	uint64_t wait_tsc = token_time_tsc_until_full(&ctx->token_time);
 
@@ -813,9 +829,15 @@ static int stream_tcp_proc_out_fin_wait(struct stream_ctx *ctx, struct rte_mbuf 
 		}
 	}
 	else {
+		if (ctx->flags & STREAM_CTX_F_LAST_RX_PKT_MADE_PROGRESS) {
+			ctx->flags &= ~STREAM_CTX_F_LAST_RX_PKT_MADE_PROGRESS;
+			*next_tsc = tcp_retx_timeout(ctx);
+			return -1;
+		}
+
 		plogx_dbg("Retransmit!\n");
 		ctx->same_state++;
-		tcp_set_retransmit(retransmit);
+		tcp_set_retransmit(ctx);
 		ctx->next_seq = ctx->ackd_seq;
 		create_tcp_pkt(ctx, mbuf, TCP_FIN_FLAG | TCP_ACK_FLAG, 0, 0);
 		token_time_take(&ctx->token_time, mbuf_wire_size(mbuf));
@@ -824,7 +846,7 @@ static int stream_tcp_proc_out_fin_wait(struct stream_ctx *ctx, struct rte_mbuf 
 	}
 }
 
-static int stream_tcp_proc_out_time_wait(struct stream_ctx *ctx, struct rte_mbuf *mbuf, uint64_t *next_tsc, uint32_t *retransmit)
+static int stream_tcp_proc_out_time_wait(struct stream_ctx *ctx, struct rte_mbuf *mbuf, uint64_t *next_tsc)
 {
 	if (ctx->sched_tsc < rte_rdtsc()) {
 		plogx_dbg("TIME_WAIT expired! for %#x\n", ctx->tuple->dst_addr);
@@ -846,7 +868,7 @@ static int stream_tcp_proc_out_time_wait(struct stream_ctx *ctx, struct rte_mbuf
 	return 0;
 }
 
-static int stream_tcp_proc_out(struct stream_ctx *ctx, struct rte_mbuf *mbuf, uint64_t *next_tsc, uint32_t *retransmit)
+static int stream_tcp_proc_out(struct stream_ctx *ctx, struct rte_mbuf *mbuf, uint64_t *next_tsc)
 {
 	if (ctx->same_state == 10) {
 		ctx->flags |= STREAM_CTX_F_EXPIRED;
@@ -859,19 +881,19 @@ static int stream_tcp_proc_out(struct stream_ctx *ctx, struct rte_mbuf *mbuf, ui
 	case LISTEN: /* Server starts in this state. */
 		return stream_tcp_proc_out_listen(ctx, mbuf, next_tsc);
 	case SYN_SENT:
-		return stream_tcp_proc_out_syn_sent(ctx, mbuf, next_tsc, retransmit);
+		return stream_tcp_proc_out_syn_sent(ctx, mbuf, next_tsc);
 	case SYN_RECEIVED:
-		return stream_tcp_proc_out_syn_recv(ctx, mbuf, next_tsc, retransmit);
+		return stream_tcp_proc_out_syn_recv(ctx, mbuf, next_tsc);
 	case ESTABLISHED:
-		return stream_tcp_proc_out_estab(ctx, mbuf, next_tsc, retransmit);
+		return stream_tcp_proc_out_estab(ctx, mbuf, next_tsc);
 	case CLOSE_WAIT:
 		return stream_tcp_proc_out_close_wait(ctx, mbuf, next_tsc);
 	case LAST_ACK:
-		return stream_tcp_proc_out_last_ack(ctx, mbuf, next_tsc, retransmit);
+		return stream_tcp_proc_out_last_ack(ctx, mbuf, next_tsc);
 	case FIN_WAIT:
-		return stream_tcp_proc_out_fin_wait(ctx, mbuf, next_tsc, retransmit);
+		return stream_tcp_proc_out_fin_wait(ctx, mbuf, next_tsc);
 	case TIME_WAIT:
-		return stream_tcp_proc_out_time_wait(ctx, mbuf, next_tsc, retransmit);
+		return stream_tcp_proc_out_time_wait(ctx, mbuf, next_tsc);
 	}
 
 	return -1;
@@ -881,7 +903,7 @@ static int stream_tcp_proc_out(struct stream_ctx *ctx, struct rte_mbuf *mbuf, ui
    nothing to send. The latter case might mean that the connection has
    ended, or that a future event has been scheduled. l4_meta =>
    mbuf contains packet to be processed. */
-int stream_tcp_proc(struct stream_ctx *ctx, struct rte_mbuf *mbuf, struct l4_meta *l4_meta, uint64_t *next_tsc, uint32_t *retransmit)
+int stream_tcp_proc(struct stream_ctx *ctx, struct rte_mbuf *mbuf, struct l4_meta *l4_meta, uint64_t *next_tsc)
 {
 	token_time_update(&ctx->token_time, rte_rdtsc());
 	token_time_update(&ctx->token_time_other, rte_rdtsc());
@@ -894,7 +916,7 @@ int stream_tcp_proc(struct stream_ctx *ctx, struct rte_mbuf *mbuf, struct l4_met
 			return ret;
 	}
 
-	return stream_tcp_proc_out(ctx, mbuf, next_tsc, retransmit);
+	return stream_tcp_proc_out(ctx, mbuf, next_tsc);
 }
 
 int stream_tcp_is_ended(struct stream_ctx *ctx)

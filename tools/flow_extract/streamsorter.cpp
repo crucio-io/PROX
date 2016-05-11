@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -157,7 +157,7 @@ FlowTable<pkt_tuple, uint32_t>::entry* StreamSorter::getFlowEntry(const PcapPkt 
 		}
 	}
 
-	if (a->expired(pkt.ts(), stream[a->value].getTimeout())) {
+	if (a->expired(pkt.ts(), streams[a->value].getTimeout())) {
 		ft->remove(a);
 
 		stream = addNewStream(pkt.getProto());

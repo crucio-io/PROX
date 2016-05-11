@@ -1,5 +1,5 @@
 /*
-  Copyright(c) 2010-2015 Intel Corporation.
+  Copyright(c) 2010-2016 Intel Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -131,7 +131,7 @@ static void token_time_set_bpp(struct token_time *tt, uint64_t bpp)
 	tt->cfg.bpp = bpp;
 }
 
-static void token_time_init(struct token_time *tt, struct token_time_cfg *cfg)
+static void token_time_init(struct token_time *tt, const struct token_time_cfg *cfg)
 {
 	tt->cfg = *cfg;
 }
@@ -141,6 +141,11 @@ static void token_time_reset(struct token_time *tt, uint64_t tsc, uint64_t bytes
 	tt->tsc_last = tsc;
 	tt->bytes_now = bytes_now;
 	tt->tsc_last_bytes = 0;
+}
+
+static void token_time_reset_full(struct token_time *tt, uint64_t tsc)
+{
+	token_time_reset(tt, tsc, tt->cfg.bytes_max);
 }
 
 static int token_time_take(struct token_time *tt, uint64_t bytes)
