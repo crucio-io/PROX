@@ -76,7 +76,6 @@ int cqm_is_supported(void)
 
 	cpuid(&r, 0xf, 0x0, 0x1, 0x0);
 
-
 	cqm_features.upscaling_factor = r.ebx;
 	cqm_features.max_rmid = r.ecx;
 	cqm_features.event_types = r.edx;

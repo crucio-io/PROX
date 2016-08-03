@@ -32,6 +32,7 @@
 #include <rte_ethdev.h>
 #include <rte_version.h>
 
+#include "rx_pkt.h"
 #include "tx_pkt.h"
 #include "task_base.h"
 #include "stats.h"
@@ -46,11 +47,21 @@ static void tx_buf_pkt_single(struct task_base *tbase, struct rte_mbuf *mbuf, co
 	tbase->ws_mbuf->mbuf[out][prod & WS_MBUF_MASK] = mbuf;
 }
 
+#define MAX_PMD_TX 32
+
 /* The following help functions also report stats. Therefore we need
    to pass the task_base struct. */
 static inline void tx_drop(const struct port_queue *port_queue, struct rte_mbuf **mbufs, uint16_t n_pkts, __attribute__((unused)) struct task_base *tbase)
 {
-	uint16_t ntx = rte_eth_tx_burst(port_queue->port, port_queue->queue, mbufs, n_pkts);
+	uint16_t ntx;
+
+	/* TX vector mode can't transmit more than 32 packets */
+	if (n_pkts > MAX_PMD_TX) {
+		ntx = rte_eth_tx_burst(port_queue->port, port_queue->queue, mbufs, MAX_PMD_TX);
+		ntx += rte_eth_tx_burst(port_queue->port, port_queue->queue, mbufs + ntx, n_pkts - ntx);
+	} else {
+		ntx = rte_eth_tx_burst(port_queue->port, port_queue->queue, mbufs, n_pkts);
+	}
 
 	TASK_STATS_ADD_TX(&tbase->aux->stats, ntx);
 	if (ntx < n_pkts) {
@@ -268,7 +279,6 @@ static uint16_t tx_pkt_free_dropped(__attribute__((unused)) struct task_base *tb
 		v |= out[i];
 	}
 
-
 	if (unlikely(v)) {
 		/* At least some packets need to be dropped, so the
 		   mbufs array needs to be updated. */
@@ -476,8 +486,7 @@ void tx_pkt_trace(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_p
 	if (0 == tbase->aux->task_rt_dump.n_trace) {
 		tbase->tx_pkt = tbase->aux->tx_pkt_orig;
 		tbase->aux->tx_pkt_orig = NULL;
-		tbase->rx_pkt = tbase->aux->rx_pkt_orig;
-		tbase->aux->rx_pkt_orig = NULL;
+		task_base_del_rx_pkt_function(tbase, rx_pkt_trace);
 	}
 }
 

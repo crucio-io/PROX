@@ -75,5 +75,4 @@ void cmd_set_vlan_offload(uint8_t port_id, unsigned int val);
 
 void cmd_reset_port(uint8_t port_id);
 
-
 #endif /* _COMMANDS_H_ */

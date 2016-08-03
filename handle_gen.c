@@ -38,6 +38,7 @@
 #include <rte_byteorder.h>
 #include <rte_ether.h>
 
+#include "random.h"
 #include "prox_malloc.h"
 #include "handle_gen.h"
 #include "handle_lat.h"
@@ -101,9 +102,9 @@ struct task_gen {
 	uint8_t through_ring;
 	uint8_t lat_enabled;
 	struct {
+		struct random state;
 		uint32_t rand_mask; /* since the random vals are uniform, masks don't introduce bias  */
 		uint32_t fixed_bits; /* length of each random (max len = 4) */
-		uint32_t seeds;
 		uint16_t rand_offset; /* each random has an offset*/
 		uint8_t rand_len; /* # bytes to take from random (no bias introduced) */
 	} rand[64];
@@ -217,7 +218,7 @@ static void set_random_fields(struct task_gen *task, uint8_t *hdr)
 	uint32_t ret, ret_tmp;
 
 	for (uint16_t i = 0; i < task->n_rands; ++i) {
-		ret = rand_r(&task->rand[i].seeds);
+		ret = random_next(&task->rand[i].state);
 		ret_tmp = (ret & task->rand[i].rand_mask) | task->rand[i].fixed_bits;
 
 		ret_tmp = rte_bswap32(ret_tmp);
@@ -492,7 +493,7 @@ static void handle_gen_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, ui
 	   that we can (leaving a "gap" in the packet stream on the
 	   wire) */
 	task->token_time.bytes_now -= will_send_bytes;
-	if ((send_bulk == task->max_bulk_size) && (task->token_time.bytes_now > will_send_bytes)) {
+	if (send_bulk == task->max_bulk_size && task->token_time.bytes_now > will_send_bytes) {
 		task->token_time.bytes_now = will_send_bytes;
 	}
 
@@ -541,7 +542,7 @@ static void handle_gen_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, ui
 static void init_task_gen_seeds(struct task_gen *task)
 {
 	for (size_t i = 0; i < sizeof(task->rand)/sizeof(task->rand[0]); ++i)
-		task->rand[i].seeds = rte_rdtsc();
+		random_init_seed(&task->rand[i].state);
 }
 
 static uint32_t pcap_count_pkts(pcap_t *handle)
@@ -611,16 +612,48 @@ static int pcap_read_pkts(pcap_t *handle, const char *file_name, uint32_t n_pkts
 	return 0;
 }
 
-static void check_length(struct task_gen *task, uint32_t pkt_size)
+static void check_pkt_size(struct task_gen *task, uint32_t pkt_size)
 {
 	const uint16_t min_len = sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr);
 	const uint16_t max_len = ETHER_MAX_LEN - 4;
 
-	PROX_PANIC((pkt_size > max_len), "pkt_size out of range (must be <= %u)\n", max_len);
-	PROX_PANIC((pkt_size < min_len), "pkt_size out of range (must be >= %u)\n", min_len);
-	PROX_PANIC((task->lat_enabled) && (pkt_size < task->lat_pos + 4U), "Writing latency outside the packet\n");
-	PROX_PANIC((task->packet_id_pos) && (pkt_size < task->packet_id_pos + 5U), "Writing packet id outside the packet\n");
-	PROX_PANIC((task->accur_pos) && (pkt_size < task->accur_pos + 4U), "Writing accur outside the packet\n");
+	PROX_PANIC(pkt_size == 0, "Invalid packet size length (no packet defined?)\n");
+	PROX_PANIC(pkt_size > max_len, "pkt_size out of range (must be <= %u)\n", max_len);
+	PROX_PANIC(pkt_size < min_len, "pkt_size out of range (must be >= %u)\n", min_len);
+}
+
+static void check_all_pkt_size(struct task_gen *task)
+{
+	for (uint32_t i = 0; i < task->n_pkts;++i) {
+		check_pkt_size(task, task->proto[i].len);
+	}
+}
+
+static void check_fields_in_bounds(struct task_gen *task)
+{
+	const uint32_t pkt_size = task->proto[0].len;
+
+	if (task->lat_enabled) {
+		uint32_t pos_beg = task->lat_pos;
+		uint32_t pos_end = task->lat_pos + 3U;
+
+		PROX_PANIC(pkt_size <= pos_end, "Writing latency at %u-%u, but packet size is %u bytes\n",
+			   pos_beg, pos_end, pkt_size);
+	}
+	if (task->packet_id_pos) {
+		uint32_t pos_beg = task->packet_id_pos;
+		uint32_t pos_end = task->packet_id_pos + 4U;
+
+		PROX_PANIC(pkt_size <= pos_end, "Writing packet at %u-%u, but packet size is %u bytes\n",
+			   pos_beg, pos_end, pkt_size);
+	}
+	if (task->accur_pos) {
+		uint32_t pos_beg = task->accur_pos;
+		uint32_t pos_end = task->accur_pos + 3U;
+
+		PROX_PANIC(pkt_size <= pos_end, "Writing accuracy at %u%-u, but packet size is %u bytes\n",
+			   pos_beg, pos_end, pkt_size);
+	}
 }
 
 static void task_init_gen_load_pkt_inline(struct task_gen *task, struct task_args *targ)
@@ -628,12 +661,12 @@ static void task_init_gen_load_pkt_inline(struct task_gen *task, struct task_arg
 	const int socket_id = rte_lcore_to_socket_id(targ->lconf->id);
 
 	task->n_pkts = 1;
-	PROX_PANIC(targ->pkt_size == 0, "Invalid packet size length (no packet defined?)\n");
-	check_length(task, targ->pkt_size);
 
 	task->proto = prox_zmalloc(task->n_pkts * sizeof(*task->proto), socket_id);
 	rte_memcpy(task->proto[0].buf, targ->pkt_inline, RTE_MIN(targ->pkt_size, sizeof(task->proto[0].buf)));
 	task->proto[0].len = targ->pkt_size;
+	check_all_pkt_size(task);
+	check_fields_in_bounds(task);
 }
 
 static void task_init_gen_load_pcap(struct task_gen *task, struct task_args *targ)
@@ -649,8 +682,9 @@ static void task_init_gen_load_pcap(struct task_gen *task, struct task_args *tar
 	if (targ->n_pkts)
 		task->n_pkts = RTE_MIN(task->n_pkts, targ->n_pkts);
 	plogx_info("Loading %u packets from pcap\n", task->n_pkts);
-	task->proto = prox_zmalloc(task->n_pkts * sizeof(*task->proto), socket_id);
-	PROX_PANIC(task->proto == NULL, "Failed to allocate %lu bytes (in huge pages) for pcap file\n", task->n_pkts * sizeof(*task->proto));
+	size_t mem_size = task->n_pkts * sizeof(*task->proto);
+	task->proto = prox_zmalloc(mem_size, socket_id);
+	PROX_PANIC(task->proto == NULL, "Failed to allocate %lu bytes (in huge pages) for pcap file\n", mem_size);
 
 	pcap_read_pkts(handle, targ->pcap_file, task->n_pkts, task->proto, NULL);
 	pcap_close(handle);
@@ -683,8 +717,9 @@ void task_gen_set_pkt_size(struct task_base *tbase, uint32_t pkt_size)
 {
 	struct task_gen *task = (struct task_gen *)tbase;
 
-	check_length(task, pkt_size);
 	task->proto[0].len = pkt_size;
+	check_all_pkt_size(task);
+	check_fields_in_bounds(task);
 }
 
 void task_gen_set_rate(struct task_base *tbase, uint64_t bps)
@@ -818,14 +853,6 @@ int task_gen_add_rand(struct task_base *tbase, const char *rand_str, uint32_t of
 	task->rand[task->n_rands].rand_mask = mask;
 	task->rand[task->n_rands].fixed_bits = fixed;
 
-	if ((task->rand[task->n_rands].rand_mask & RAND_MAX) != task->rand[task->n_rands].rand_mask) {
-		plog_err("Using rand() as random generator\n"
-			 "Generated values with rand() are in the range [0, %#08x].\n"
-			 "The provided mask was %#08x. Suggesting to use 2 random fields instead.\n"
-			 "The provided random string was '%s'\n",
-			 RAND_MAX, task->rand[task->n_rands].rand_mask, rand_str);
-		return -1;
-	}
 	task->n_rands++;
 	return 0;
 }
@@ -867,13 +894,12 @@ static void init_task_gen(struct task_base *tbase, struct task_args *targ)
 	task->lat_enabled = targ->lat_enabled;
 	task->runtime_flags = targ->runtime_flags;
 	PROX_PANIC((task->lat_pos || task->accur_pos) && !(task->lat_enabled), "lat not enabled by lat pos or accur pos configured\n");
-	if ((targ->nb_txrings == 0) && (targ->nb_txports == 1)) {
+
+	if (targ->nb_txrings == 0 && targ->nb_txports == 1) {
 		task->queue_id = tbase->tx_params_hw.tx_port_queue[0].queue;
-	} else if ((targ->nb_txrings == 1) && (targ->nb_txports == 0)) {
+	} else if (targ->nb_txrings == 1 && targ->nb_txports == 0) {
 		task->queue_id = 0;
 		task->through_ring = 1;
-	} else {
-		PROX_PANIC(1, "Unexpected configuration with %d rings and %d ports\n", targ->nb_txrings, targ->nb_txports);
 	}
 
 	if (!strcmp(targ->pcap_file, "")) {
@@ -884,7 +910,7 @@ static void init_task_gen(struct task_base *tbase, struct task_args *targ)
 		task_init_gen_load_pcap(task, targ);
 	}
 
-	if ((targ->flags & DSF_KEEP_SRC_MAC) == 0) {
+	if ((targ->flags & DSF_KEEP_SRC_MAC) == 0 && (targ->nb_txrings || targ->nb_txports)) {
 		uint8_t *src_addr = prox_port_cfg[tbase->tx_params_hw.tx_port_queue->port].eth_addr.addr_bytes;
 		for (uint32_t i = 0; i < task->n_pkts; ++i) {
 			rte_memcpy(&task->proto[i].buf[6], src_addr, 6);

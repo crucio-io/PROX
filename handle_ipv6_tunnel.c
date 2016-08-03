@@ -80,6 +80,7 @@ struct task_ipv6_tun_base {
 	uint16_t                lookup_port_mask;  // Mask used before looking up the port
 	void*                   lookup_table;      // Fast lookup table for bindings
 	uint32_t		runtime_flags;
+	int                     offload_crc;
 };
 
 struct task_ipv6_decap {
@@ -161,7 +162,7 @@ static void init_lookup_table(struct task_ipv6_tun_base* ptask, struct task_args
 
 static void init_task_ipv6_tun_base(struct task_ipv6_tun_base* tun_base, struct task_args* targ)
 {
-	memcpy(&tun_base->src_mac, &prox_port_cfg[tun_base->base.tx_params_hw.tx_port_queue[0].port].eth_addr, sizeof(tun_base->src_mac));
+	memcpy(&tun_base->src_mac, find_reachable_port(targ), sizeof(tun_base->src_mac));
 
 	tun_base->lookup_port_mask = targ->lookup_port_mask;  // Mask used before looking up the port
 
@@ -173,6 +174,11 @@ static void init_task_ipv6_tun_base(struct task_ipv6_tun_base* tun_base, struct 
 
 	plogx_info("IPv6 Tunnel MAC="MAC_BYTES_FMT" port_mask=0x%x\n",
 		  MAC_BYTES(tun_base->src_mac.addr_bytes), tun_base->lookup_port_mask);
+
+	struct prox_port_cfg *port = find_reachable_port(targ);
+	if (port) {
+		tun_base->offload_crc = port->capabilities.tx_offload_ipv4_cksum;
+	}
 }
 
 static void init_task_ipv6_decap(struct task_base* tbase, struct task_args* targ)
@@ -469,7 +475,7 @@ static inline uint8_t handle_ipv6_encap(struct task_ipv6_encap* ptask, struct rt
 	if (tun_base->runtime_flags & TASK_TX_CRC) {
 	// We modified the TTL in the IPv4 header, hence have to recompute the IPv4 checksum
 #define TUNNEL_L2_LEN (sizeof(struct ether_hdr) + sizeof(struct ipv6_hdr))
-		prox_ip_cksum(rx_mbuf, pip4, TUNNEL_L2_LEN, sizeof(struct ipv4_hdr));
+		prox_ip_cksum(rx_mbuf, pip4, TUNNEL_L2_LEN, sizeof(struct ipv4_hdr), ptask->base.offload_crc);
 	}
 	return 0;
 }

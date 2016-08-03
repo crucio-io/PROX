@@ -136,7 +136,6 @@ struct rte_table_hash_ext {
 	uint8_t memory[0] __rte_cache_aligned;
 };
 
-
 uint64_t get_bucket(void* table, uint32_t bucket_idx, void** key, void** entries)
 {
 	struct rte_table_hash_ext *t = (struct rte_table_hash_ext *) table;
@@ -168,7 +167,6 @@ uint64_t get_bucket(void* table, uint32_t bucket_idx, void** key, void** entries
 	return t->n_buckets;
 }
 
-
 uint64_t get_bucket_key8(void* table, uint32_t bucket_idx, void** key, void** entries)
 {
 	struct rte_bucket_4_8 *bucket, *bucket0;
@@ -194,7 +192,6 @@ uint64_t get_bucket_key8(void* table, uint32_t bucket_idx, void** key, void** en
 	}
 	return f->n_buckets;
 }
-
 
 uint64_t hash_crc32(void* key, uint32_t key_size, uint64_t seed)
 {

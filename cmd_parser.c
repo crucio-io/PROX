@@ -56,8 +56,8 @@
 #include "handle_qinq_decap4.h"
 #include "handle_lat.h"
 #include "handle_gen.h"
-#include "handle_irq.h"
 #include "handle_acl.h"
+#include "handle_irq.h"
 #include "defines.h"
 #include "prox_cfg.h"
 #include "version.h"
@@ -106,14 +106,16 @@ static int cores_task_are_valid(unsigned int *lcores, int task_id, unsigned int 
 static int parse_core_task(const char *str, uint32_t *lcore_id, uint32_t *task_id, unsigned int *nb_cores)
 {
 	char str_lcore_id[128];
+	int ret;
 
 	if (2 != sscanf(str, "%s %u", str_lcore_id, task_id))
 		return -1;
 
-	if ((*nb_cores = parse_list_set(lcore_id, str_lcore_id, 1)) <= 0) {
-		plog_err("Invalid core while parsing command\n");
+	if ((ret = parse_list_set(lcore_id, str_lcore_id, RTE_MAX_LCORE)) <= 0) {
+		plog_err("Invalid core while parsing command (%s)\n", get_parse_err());
 		return -1;
 	}
+	*nb_cores = ret;
 
 	return 0;
 }
@@ -1129,7 +1131,6 @@ static int parse_cmd_port_link_state(const char *str, struct input *input)
 	return 0;
 }
 
-
 static int parse_cmd_xstats(const char *str, struct input *input)
 {
 	unsigned val;
@@ -1341,33 +1342,68 @@ static int parse_cmd_irq(const char *str, struct input *input)
 				plog_err("Core %u task %u is not in irq mode\n", lcore_id, task_id);
 			} else {
 				struct task_irq *task_irq = (struct task_irq *)(lcore_cfg[lcore_id].tasks_all[task_id]);
-				struct irq_bucket *bucket = &task_irq->buffer[!task_irq->task_use_lt];
-				if (input->reply) {
-					char buf[8192] = {0};
-					if (bucket->index == 0) {
-						sprintf(buf, "\n");
-						input->reply(input, buf, strlen(buf));
-						buf[0] = 0;
-					}
-					for (i=0;i<bucket->index;i++) {
-						sprintf(buf + strlen(buf), "%d; %d; %ld; %ld; %ld; %ld ;", lcore_id, i, bucket->info[i].lat, (bucket->info[i].lat * 1000000) / rte_get_tsc_hz(), (bucket->info[i].tsc - task_irq->start_tsc), ((bucket->info[i].tsc - task_irq->start_tsc) * 1000) / rte_get_tsc_hz());
-						sprintf(buf+strlen(buf), "\n");
-						input->reply(input, buf, strlen(buf));
-						buf[0] = 0;
-					}
-				} else {
-					for (i=0;i<bucket->index;i++)
-						if (bucket->info[i].lat)
-							plog_info("[%d]; Interrupt %d: %ld cycles (%ld micro-sec) at %ld cycles (%ld msec)\n", lcore_id, i, bucket->info[i].lat, (bucket->info[i].lat * 1000000) / rte_get_tsc_hz(), (bucket->info[i].tsc - task_irq->start_tsc), ((bucket->info[i].tsc - task_irq->start_tsc) * 1000) / rte_get_tsc_hz());
-				}
-				task_irq->stats_use_lt = !task_irq->task_use_lt;
-				bucket->index = 0;
+
+				task_irq_show_stats(task_irq, input);
 			}
 		}
 	}
 	return 0;
 }
 
+static void task_lat_show_latency_per_packet_stats(uint8_t lcore_id, uint8_t task_id, struct input *input)
+{
+#ifdef LATENCY_PER_PACKET
+	unsigned int npackets;
+	uint64_t lat[MAX_PACKETS_FOR_LATENCY];
+
+	stats_core_lat(lcore_id, task_id, &npackets, lat);
+
+	if (input->reply) {
+		char buf[4096] = {0};
+		for (size_t i = 0; i < npackets; i++)
+			sprintf(buf+strlen(buf), "[%zu]: %"PRIu64"\n", i, lat[i]);
+		input->reply(input, buf, strlen(buf));
+	}
+	else {
+		for (size_t i = 0; i < npackets; i++)
+			plog_info("[%zu]: %"PRIu64"\n", i, lat[i]);
+	}
+#else
+	plog_info("LATENCY_PER_PACKET disabled\n");
+#endif
+}
+
+static void task_lat_show_latency_histogram(uint8_t lcore_id, uint8_t task_id, struct input *input)
+{
+#ifdef LATENCY_DETAILS
+	uint64_t *buckets;
+
+	stats_core_lat_histogram(lcore_id, task_id, &buckets);
+
+	if (buckets == NULL)
+		return;
+
+	if (input->reply) {
+		char buf[4096] = {0};
+		for (size_t i = 0; i < 128; i++)
+			sprintf(buf+strlen(buf), "Bucket [%zu]: %"PRIu64"\n", i, buckets[i]);
+		input->reply(input, buf, strlen(buf));
+	}
+	else {
+		for (size_t i = 0; i < 128; i++)
+			if (buckets[i])
+				plog_info("Bucket [%zu]: %"PRIu64"\n", i, buckets[i]);
+	}
+#else
+	plog_info("LATENCY_DETAILS disabled\n");
+#endif
+}
+
+static void task_lat_show_stats(uint8_t lcore_id, uint8_t task_id, struct input *input)
+{
+	task_lat_show_latency_per_packet_stats(lcore_id, task_id, input);
+	task_lat_show_latency_histogram(lcore_id, task_id, input);
+}
 
 static int parse_cmd_lat_packets(const char *str, struct input *input)
 {
@@ -1383,48 +1419,7 @@ static int parse_cmd_lat_packets(const char *str, struct input *input)
 				plog_err("Core %u task %u is not measuring latency\n", lcore_id, task_id);
 			}
 			else {
-				unsigned int i;
-#ifndef NO_LATENCY_PER_PACKET
-				unsigned int npackets;
-				uint64_t lat[MAX_PACKETS_FOR_LATENCY];
-
-				stats_core_lat(lcore_id, task_id, &npackets, lat);
-
-				if (input->reply) {
-					char buf[4096] = {0};
-					for (i=0;i<npackets;i++)
-						sprintf(buf+strlen(buf), "[%d]: %"PRIu64"\n", i, lat[i]);
-					input->reply(input, buf, strlen(buf));
-				}
-				else {
-					for (i=0;i<npackets;i++)
-						plog_info("[%d]: %"PRIu64"\n", i, lat[i]);
-				}
-#else
-				plog_info("NO_LATENCY_PER_PACKET enabled\n");
-#endif
-#ifndef NO_LATENCY_DETAILS
-				struct task_lat *task_lat = (struct task_lat *)(lcore_cfg[lcore_id].tasks_all[task_id]);
-				struct lat_test *lat_test = &task_lat->lt[!task_lat->using_lt];
-
-				uint64_t *buckets = lat_test->buckets;
-				if (buckets == NULL)
-					return 0;
-
-				if (input->reply) {
-					char buf[4096] = {0};
-					for (i=0;i<128;i++)
-						sprintf(buf+strlen(buf), "Bucket [%d]: %"PRIu64"\n", i, buckets[i]);
-					input->reply(input, buf, strlen(buf));
-				}
-				else {
-					for (i=0;i<128;i++)
-						if (buckets[i])
-							plog_info("Bucket [%d]: %"PRIu64"\n", i, buckets[i]);
-				}
-#else
-				plog_info("NO_LATENCY_DETAILS enabled\n");
-#endif
+				task_lat_show_stats(lcore_id, task_id, input);
 			}
 		}
 	}

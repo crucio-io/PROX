@@ -33,6 +33,7 @@
 #include <stdio.h>
 #include <rte_version.h>
 
+#include "prox_port_cfg.h"
 #include "prox_malloc.h"
 #include "task_init.h"
 #include "rx_pkt.h"
@@ -158,13 +159,13 @@ static size_t init_rx_tx_rings_ports(struct task_args *targ, struct task_base *t
 	}
 	else {
 		if (targ->nb_rxports == 1) {
-			tbase->rx_pkt = (targ->task_init->flag_features & TASK_FEATURE_TWICE_RX)? rx_pkt_hw1_twice : rx_pkt_hw1;
+			tbase->rx_pkt = (targ->task_init->flag_features & TASK_FEATURE_MULTI_RX)? rx_pkt_hw1_multi : rx_pkt_hw1;
 			tbase->rx_params_hw1.rx_pq.port =  targ->rx_ports[0];
 			tbase->rx_params_hw1.rx_pq.queue = targ->rx_queues[0];
 		}
 		else {
 			PROX_ASSERT((targ->nb_rxports != 0) || (targ->task_init->flag_features & TASK_FEATURE_NO_RX));
-			tbase->rx_pkt = (targ->task_init->flag_features & TASK_FEATURE_TWICE_RX)? rx_pkt_hw_twice : rx_pkt_hw;
+			tbase->rx_pkt = (targ->task_init->flag_features & TASK_FEATURE_MULTI_RX)? rx_pkt_hw_multi : rx_pkt_hw;
 			tbase->rx_params_hw.nb_rxports = targ->nb_rxports;
 			tbase->rx_params_hw.rx_pq = (struct port_queue *)(((uint8_t *)tbase) + offset);
 			offset += sizeof(struct port_queue) * tbase->rx_params_hw.nb_rxports;
@@ -174,12 +175,11 @@ static size_t init_rx_tx_rings_ports(struct task_args *targ, struct task_base *t
 			}
 
 			if (rte_is_power_of_2(targ->nb_rxports)) {
-				tbase->rx_pkt = (targ->task_init->flag_features & TASK_FEATURE_TWICE_RX)? rx_pkt_hw_pow2_twice : rx_pkt_hw_pow2;
+				tbase->rx_pkt = (targ->task_init->flag_features & TASK_FEATURE_MULTI_RX)? rx_pkt_hw_pow2_multi : rx_pkt_hw_pow2;
 				tbase->rx_params_hw.rxport_mask = targ->nb_rxports - 1;
 			}
 		}
 	}
-
 
 	if ((targ->nb_txrings != 0) && (targ->nb_txports == 1)) {
 		/* Transmitting to multiple rings and one port */
@@ -314,9 +314,12 @@ struct task_base *init_task_struct(struct task_args *targ)
 	offset = init_rx_tx_rings_ports(targ, tbase, offset);
 	tbase->aux = (struct task_base_aux *)(((uint8_t *)tbase) + offset);
 
+	if (targ->task_init->flag_features & TASK_FEATURE_RX_ALL) {
+		task_base_add_rx_pkt_function(tbase, rx_pkt_all);
+		tbase->aux->all_mbufs = prox_zmalloc(MAX_RX_PKT_ALL * sizeof(* tbase->aux->all_mbufs), task_socket);
+	}
 	if (targ->task_init->flag_features & TASK_FEATURE_TSC_RX) {
-		tbase->aux->tsc_rx.rx_pkt_orig = tbase->rx_pkt;
-		tbase->rx_pkt = rx_pkt_tsc;
+		task_base_add_rx_pkt_function(tbase, rx_pkt_tsc);
 	}
 
 	offset += sizeof(struct task_base_aux);
@@ -352,6 +355,18 @@ struct task_args *find_reachable_task_sending_to_port(struct task_args *from)
 		ret = find_reachable_task_sending_to_port(dtarg);
 		if (ret)
 			return ret;
+	}
+	return NULL;
+}
+
+struct prox_port_cfg *find_reachable_port(struct task_args *from)
+{
+	struct task_args *dst = find_reachable_task_sending_to_port(from);
+
+	if (dst) {
+		int port_id = dst->tx_port_queue[0].port;
+
+		return &prox_port_cfg[port_id];
 	}
 	return NULL;
 }

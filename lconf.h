@@ -151,7 +151,7 @@ void lcore_cfg_alloc_hp(void);
 int core_targ_next(struct lcore_cfg **lconf, struct task_args **targ, const int with_master);
 /* Same as above, but uses non-huge page memory (used before
    lcore_cfg_alloc_hp is called). */
-int core_targ_next_early(struct lcore_cfg **lconf, struct task_args **targ);
+int core_targ_next_early(struct lcore_cfg **lconf, struct task_args **targ, const int with_master);
 
 struct task_args *core_targ_get(uint32_t lcore_id, uint32_t task_id);
 

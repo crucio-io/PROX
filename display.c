@@ -72,9 +72,7 @@ static int col_offset;
    instance plog_info() need to be made. */
 static pthread_mutex_t disp_mtx = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP;
 
-
 static void stats_display_layout(uint8_t in_place);
-
 
 static void display_lock(void)
 {
@@ -141,7 +139,6 @@ static uint64_t div_round(uint64_t val, uint64_t delta_t)
 		else
 			return val / (delta_t/tsc_hz);
 	}
-
 }
 
 int display_getch(void)
@@ -406,7 +403,6 @@ static void stats_display_l4gen(void)
 	mvwvline(win_stat, 1, 60 +12,  ACS_VLINE, n_l4gen + 1);
 	mvwaddstrf(win_stat, 1, 61 +12, "     UDP    ");
 	mvwvline(win_stat, 0, 73 +12,  ACS_VLINE, n_l4gen + 2);
-
 
 	mvwaddstrf(win_stat, 0, 74 +12, "Expire rate (flows/s)");
 	mvwaddstrf(win_stat, 1, 74 +12, "    TCP   ");
@@ -694,6 +690,83 @@ static void stats_display_eth_ports(void)
 	display_unlock();
 }
 
+static void stats_display_core_task_entry(struct lcore_cfg *lconf, struct task_args *targ, unsigned line_no)
+{
+	if (lconf->n_tasks_run == 0) {
+		wattron(win_stat, A_BOLD);
+		wbkgdset(win_stat, COLOR_PAIR(RED_ON_NOTHING));
+	}
+	if (targ->id == 0)
+		mvwaddstrf(win_stat, line_no + 2, 0, "%2u/", lconf->id);
+	if (lconf->n_tasks_run == 0) {
+		wattroff(win_stat, A_BOLD);
+		wbkgdset(win_stat, COLOR_PAIR(NO_COLOR));
+	}
+
+	// Core number and name
+	if (!lconf_task_is_running(lconf, targ->id)) {
+		wattron(win_stat, A_BOLD);
+		wbkgdset(win_stat, COLOR_PAIR(RED_ON_NOTHING));
+	}
+	mvwaddstrf(win_stat, line_no + 2, 3, "%1u", targ->id);
+
+	if (!lconf_task_is_running(lconf, targ->id)) {
+		wattroff(win_stat, A_BOLD);
+		wbkgdset(win_stat, COLOR_PAIR(NO_COLOR));
+	}
+	mvwaddstrf(win_stat, line_no + 2, 5, "%s", targ->id == 0 ? lconf->name : "");
+	mvwaddstrf(win_stat, line_no + 2, 14, "%.9s", targ->task_init->mode_str);
+	if (strlen(targ->task_init->mode_str) > 9)
+		mvwaddstrf(win_stat, line_no + 2, 22 , "~");
+	// Rx port information
+	if (targ->nb_rxrings == 0) {
+		uint32_t pos_offset = 24;
+
+		for (int i = 0; i < targ->nb_rxports; i++) {
+			wbkgdset(win_stat, link_color(targ->rx_ports[i]));
+			pos_offset += mvwaddstrf(win_stat, line_no + 2, pos_offset, "%u", targ->rx_ports[i]);
+			wbkgdset(win_stat, COLOR_PAIR(NO_COLOR));
+			/* Space between ports */
+			if (i != targ->nb_rxports -1)
+				pos_offset++;
+			if (pos_offset - 24 >= 9)
+				break;
+		}
+	}
+	uint8_t ring_id;
+	for (ring_id = 0; ring_id < targ->nb_rxrings && ring_id < 9; ++ring_id) {
+		mvwaddstrf(win_stat, line_no + 2, 24 + ring_id, "%s", targ->rx_rings[ring_id]->name);
+	}
+	if (ring_id == 9 && ring_id < targ->nb_rxrings) {
+		mvwaddstrf(win_stat, line_no + 2, 24 + ring_id -1 , "~");
+	}
+	// Tx port information
+	uint8_t pos = 34;
+	for (uint8_t i = 0; i < targ->nb_txports; ++i) {
+		if (i) {
+			if (pos - 34 >= 9) {
+				mvwaddstrf(win_stat, line_no + 2, pos -1, "~");
+				break;
+			}
+			++pos;
+		}
+
+		if (pos - 34 >= 10) {
+			mvwaddstrf(win_stat, line_no + 2, pos -1, "~");
+			break;
+		}
+		wbkgdset(win_stat, link_color(targ->tx_port_queue[i].port));
+		mvwaddstrf(win_stat, line_no + 2, pos, "%u", targ->tx_port_queue[i].port);
+		wbkgdset(win_stat, COLOR_PAIR(NO_COLOR));
+		pos++;
+	}
+	for (ring_id = 0; ring_id < targ->nb_txrings && ring_id < 10; ++ring_id) {
+		mvwaddstrf(win_stat, line_no + 2, pos + ring_id, "%s", targ->tx_rings[ring_id]->name);
+	}
+	if (ring_id == 10 && ring_id < targ->nb_txrings)
+		mvwaddstrf(win_stat, line_no + 2, pos + ring_id-1, "~");
+}
+
 static void stats_display_core_ports(unsigned chosen_page)
 {
 	const uint32_t n_tasks_tot = stats_get_n_tasks_tot();
@@ -771,97 +844,24 @@ static void stats_display_core_ports(unsigned chosen_page)
 	wattroff(win_stat, A_BOLD);
 	wbkgdset(win_stat, COLOR_PAIR(NO_COLOR));
 
-	uint16_t line_no = 0;
-	uint32_t lcore_id = -1;
-	while(prox_core_next(&lcore_id, 0) == 0) {
-		const struct lcore_cfg *const cur_core = &lcore_cfg[lcore_id];
+	uint16_t element_count = 0;
 
-		for (uint8_t task_id = 0; task_id < cur_core->n_tasks_all; ++task_id) {
-			const struct task_args *const targ = &cur_core->targs[task_id];
+	struct lcore_cfg *lconf = NULL;
+	struct task_args *targ;
 
-			if (line_no >= core_port_height * chosen_page && line_no < core_port_height * (chosen_page + 1)) {
+	const uint16_t cur_page_beg = core_port_height * chosen_page;
+	const uint16_t cur_page_end = core_port_height * (chosen_page + 1);
 
-				if (cur_core->n_tasks_run == 0) {
-					wattron(win_stat, A_BOLD);
-					wbkgdset(win_stat, COLOR_PAIR(RED_ON_NOTHING));
-				}
-				if (task_id == 0)
-					mvwaddstrf(win_stat, line_no % core_port_height + 2, 0, "%2u/", lcore_id);
-				if (cur_core->n_tasks_run == 0) {
-					wattroff(win_stat, A_BOLD);
-					wbkgdset(win_stat, COLOR_PAIR(NO_COLOR));
-				}
+	while (core_targ_next(&lconf, &targ, 0) == 0) {
+		if (element_count >= cur_page_beg && element_count < cur_page_end)
+			stats_display_core_task_entry(lconf, targ, element_count % core_port_height);
 
-				// Core number and name
-				if (!lconf_task_is_running(cur_core, task_id)) {
-					wattron(win_stat, A_BOLD);
-					wbkgdset(win_stat, COLOR_PAIR(RED_ON_NOTHING));
-				}
-				mvwaddstrf(win_stat, line_no % core_port_height + 2, 3, "%1u", task_id);
+		PROX_ASSERT(element_count < RTE_MAX_LCORE * MAX_TASKS_PER_CORE);
 
-				if (!lconf_task_is_running(cur_core, task_id)) {
-					wattroff(win_stat, A_BOLD);
-					wbkgdset(win_stat, COLOR_PAIR(NO_COLOR));
-				}
-				mvwaddstrf(win_stat, line_no % core_port_height + 2, 5, "%s", task_id == 0 ? cur_core->name : "");
-				mvwaddstrf(win_stat, line_no % core_port_height + 2, 14, "%.9s", targ->task_init->mode_str);
-				if (strlen(targ->task_init->mode_str) > 9)
-					mvwaddstrf(win_stat, line_no % core_port_height + 2, 22 , "~");
-				// Rx port information
-				if (targ->nb_rxrings == 0) {
-					uint32_t pos_offset = 24;
-
-					for (int i = 0; i < targ->nb_rxports; i++) {
-						wbkgdset(win_stat, link_color(targ->rx_ports[i]));
-						pos_offset += mvwaddstrf(win_stat, line_no % core_port_height + 2, pos_offset, "%u", targ->rx_ports[i]);
-						wbkgdset(win_stat, COLOR_PAIR(NO_COLOR));
-						/* Space between ports */
-						if (i != targ->nb_rxports -1)
-							pos_offset++;
-						if (pos_offset - 24 >= 9)
-							break;
-					}
-				}
-				uint8_t ring_id;
-				for (ring_id = 0; ring_id < targ->nb_rxrings && ring_id < 9; ++ring_id) {
-					mvwaddstrf(win_stat, line_no % core_port_height + 2, 24 + ring_id, "%s", targ->rx_rings[ring_id]->name);
-				}
-				if (ring_id == 9 && ring_id < targ->nb_rxrings) {
-					mvwaddstrf(win_stat, line_no % core_port_height + 2, 24 + ring_id -1 , "~");
-				}
-				// Tx port information
-				uint8_t pos = 34;
-				for (uint8_t i = 0; i < targ->nb_txports; ++i) {
-					if (i) {
-						if (pos - 34 >= 9) {
-							mvwaddstrf(win_stat, line_no % core_port_height + 2, pos -1, "~");
-							break;
-						}
-						++pos;
-					}
-
-					if (pos - 34 >= 10) {
-						mvwaddstrf(win_stat, line_no % core_port_height + 2, pos -1, "~");
-						break;
-					}
-					wbkgdset(win_stat, link_color(targ->tx_port_queue[i].port));
-					mvwaddstrf(win_stat, line_no % core_port_height + 2, pos, "%u", targ->tx_port_queue[i].port);
-					wbkgdset(win_stat, COLOR_PAIR(NO_COLOR));
-					pos++;
-				}
-				for (ring_id = 0; ring_id < targ->nb_txrings && ring_id < 10; ++ring_id) {
-					mvwaddstrf(win_stat, line_no % core_port_height + 2, pos + ring_id, "%s", targ->tx_rings[ring_id]->name);
-				}
-				if (ring_id == 10 && ring_id < targ->nb_txrings)
-					mvwaddstrf(win_stat, line_no % core_port_height + 2, pos + ring_id-1, "~");
-			}
-			PROX_ASSERT(line_no < RTE_MAX_LCORE*MAX_TASKS_PER_CORE);
-
-			task_stats_disp[line_no].lcore_id = lcore_id;
-			task_stats_disp[line_no].task_id = task_id;
-			task_stats_disp[line_no].lcore_stat_id = stats_lcore_find_stat_id(lcore_id);
-			line_no++;
-		}
+		task_stats_disp[element_count].lcore_id = lconf->id;
+		task_stats_disp[element_count].task_id = targ->id;
+		task_stats_disp[element_count].lcore_stat_id = stats_lcore_find_stat_id(lconf->id);
+		element_count++;
 	}
 	display_unlock();
 }
@@ -968,7 +968,6 @@ static void stats_display_layout(uint8_t in_place)
 	mvwaddstrf(win_general, 1, 9, "rx:         tx:          err:                      rx:          tx:          err:          %%:");
 	wbkgdset(win_general, COLOR_PAIR(NO_COLOR));
 
-
 	wbkgdset(win_general, COLOR_PAIR(BLUE_ON_NOTHING));
 	mvwaddstrf(win_general, 0, 0, "Host pps ");
 	mvwaddstrf(win_general, 1, 0, "NICs pps ");
@@ -1005,7 +1004,6 @@ static void stats_display_layout(uint8_t in_place)
 	/* Draw everything to the screen */
 	refresh();
 	display_unlock();
-
 
 	switch (screen_state.chosen_screen) {
 	case 0:
@@ -1401,7 +1399,6 @@ static void display_stats_eth_ports(void)
 			mvwaddstrf(win_stat, 2 + count, 77 + 12, "%9s", "---");
 		}
 
-
 		if (rx_percent) {
 			if (rx_percent < thresh) {
 				mvwaddstrf(win_stat, 2 + count, 87 + 12, "%3lu.%04lu", rx_percent * tsc_hz / delta_t / 12500000, (rx_percent * tsc_hz / delta_t / 1250) % 10000);
@@ -1552,7 +1549,6 @@ static void display_stats_pkt_len(void)
 		mvwaddstrf(win_stat, 2 + count, 79, "%13lu", div_round(pkt_512, delta_t));
 		mvwaddstrf(win_stat, 2 + count, 93, "%13lu", div_round(pkt_1024, delta_t));
 
-
 		mvwaddstrf(win_stat, 2 + count, 107, "%13lu", last->tx_pkt_size[PKT_SIZE_64]);
 		mvwaddstrf(win_stat, 2 + count, 121, "%13lu", last->tx_pkt_size[PKT_SIZE_65]);
 		mvwaddstrf(win_stat, 2 + count, 135, "%13lu", last->tx_pkt_size[PKT_SIZE_128]);
@@ -1592,7 +1588,6 @@ static void display_stats_latency(void)
 				min_nsec = 0;
 			}
 
-
 			if ((lat_test->max_lat << LATENCY_ACCURACY) < UINT64_MAX/1000000) {
 				max_usec = (lat_test->max_lat<<LATENCY_ACCURACY)*1000000/tsc_hz;
 				max_nsec = ((lat_test->max_lat<<LATENCY_ACCURACY)*1000000 - max_usec*tsc_hz)*1000/tsc_hz;
@@ -1607,7 +1602,6 @@ static void display_stats_latency(void)
 			mvwaddstrf(win_stat, 2 + i, 42, "%6"PRIu64".%03"PRIu64"", avg_usec, avg_nsec);
 			mvwaddstrf(win_stat, 2 + i, 53, "%12.3f", sqrt((((lat_test->var_lat << (2 * LATENCY_ACCURACY)) / lat_test->tot_pkts)*1000000.0/tsc_hz*1000000/tsc_hz) - (((lat_test->tot_lat << LATENCY_ACCURACY) / lat_test->tot_pkts*1000000.0/tsc_hz * (lat_test->tot_lat << LATENCY_ACCURACY) /lat_test->tot_pkts * 1000000/tsc_hz))));
 			mvwaddstrf(win_stat, 2 + i, 68, "%14"PRIu64"", lat_test->lost_packets);
-
 
 			if (lat_test->tot_pkts) {
 				mvwaddstrf(win_stat, 2 + i, 140-29, "%11"PRIu64"", lat_test->tot_rx_acc*1000000000/lat_test->tot_pkts/tsc_hz);

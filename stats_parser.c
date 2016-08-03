@@ -487,7 +487,6 @@ static uint64_t sp_latency_max(int argc, const char *argv[])
 	if (!lat_test->tot_pkts)
 		return -1;
 
-
 	if ((lat_test->max_lat << LATENCY_ACCURACY) < UINT64_MAX/1000000)
 		max_usec = (lat_test->max_lat<<LATENCY_ACCURACY)*1000000/rte_get_tsc_hz();
 	else

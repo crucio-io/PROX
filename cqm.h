@@ -51,5 +51,4 @@ void cqm_init_stat_core(uint8_t lcore_id);
 
 int cqm_read_ctr(uint64_t* ret, uint64_t rmid);
 
-
 #endif /* _CQM_H_ */

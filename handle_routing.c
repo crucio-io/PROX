@@ -63,6 +63,7 @@ struct task_routing {
 	struct lcore_cfg                *lconf;
 	struct rte_lpm                  *ipv4_lpm;
 	struct next_hop                 *next_hops;
+	int                             offload_crc;
 	uint32_t			number_free_rules;
 	uint16_t                        qinq_tag;
 	uint32_t                        marking[4];
@@ -123,13 +124,17 @@ static void init_task_routing(struct task_base *tbase, struct task_args *targ)
 	task->next_hops = lpm->next_hops;
 	task->number_free_rules = lpm->n_free_rules;
 
-
+	struct task_args *dtarg;
+	struct core_task ct;
 	for (uint32_t i = 0; i < targ->nb_txrings || i < targ->nb_txports; ++i) {
+		ct = targ->core_task_set[0].core_task[i];
+		dtarg = core_targ_get(ct.core, ct.task);
+		dtarg = find_reachable_task_sending_to_port(dtarg);
 		if (task->runtime_flags & TASK_MPLS_TAGGING) {
-			task->src_mac[i] = (0x0000ffffffffffff & ((*(uint64_t*)&prox_port_cfg[i].eth_addr))) | ((uint64_t)ETYPE_MPLSU << (64 - 16));
+			task->src_mac[i] = (0x0000ffffffffffff & ((*(uint64_t*)&prox_port_cfg[dtarg->tx_port_queue[0].port].eth_addr))) | ((uint64_t)ETYPE_MPLSU << (64 - 16));
 		}
 		else {
-			task->src_mac[i] = (0x0000ffffffffffff & ((*(uint64_t*)&prox_port_cfg[i].eth_addr))) | ((uint64_t)ETYPE_IPv4 << (64 - 16));
+			task->src_mac[i] = (0x0000ffffffffffff & ((*(uint64_t*)&prox_port_cfg[dtarg->tx_port_queue[0].port].eth_addr))) | ((uint64_t)ETYPE_IPv4 << (64 - 16));
 		}
 	}
 
@@ -137,8 +142,13 @@ static void init_task_routing(struct task_base *tbase, struct task_args *targ)
 		task->marking[i] = rte_bswap32(targ->marking[i] << 9);
 	}
 
+	struct prox_port_cfg *port = find_reachable_port(targ);
+	if (port) {
+		task->offload_crc = port->capabilities.tx_offload_ipv4_cksum;
+	}
+
 	targ->lconf->ctrl_func_m[targ->task] = routing_update;
-	targ->lconf->ctrl_timeout = rte_get_tsc_hz()/50;
+	targ->lconf->ctrl_timeout = freq_to_tsc(20);
 }
 
 static inline uint8_t handle_routing(struct task_routing *task, struct rte_mbuf *mbuf);
@@ -179,7 +189,7 @@ static void set_l2_mpls(struct task_routing *task, struct rte_mbuf *mbuf, uint8_
 {
 	struct ether_hdr *peth = (struct ether_hdr *)rte_pktmbuf_prepend(mbuf, sizeof(struct mpls_hdr));
 	l2_len += sizeof(struct mpls_hdr);
-	prox_ip_cksum(mbuf, (struct ipv4_hdr *)((uint8_t *)peth + l2_len), l2_len, sizeof(struct ipv4_hdr));
+	prox_ip_cksum(mbuf, (struct ipv4_hdr *)((uint8_t *)peth + l2_len), l2_len, sizeof(struct ipv4_hdr), task->offload_crc);
 
 	*((uint64_t *)(&peth->d_addr)) = task->next_hops[nh_idx].mac_port_8bytes;
 	*((uint64_t *)(&peth->s_addr)) = task->src_mac[task->next_hops[nh_idx].mac_port.out_idx];

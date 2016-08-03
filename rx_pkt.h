@@ -41,13 +41,13 @@ uint16_t rx_pkt_hw(struct task_base *tbase, struct rte_mbuf ***mbufs);
 uint16_t rx_pkt_hw_pow2(struct task_base *tbase, struct rte_mbuf ***mbufs);
 uint16_t rx_pkt_hw1(struct task_base *tbase, struct rte_mbuf ***mbufs);
 
-/* The _twice variation of the function is used to work-around the
-   problem with QoS and vector PMD. When vector PMD returns more than
-   32 packets, the two variations of the receive function can be
-   merged back together. */
-uint16_t rx_pkt_hw_twice(struct task_base *tbase, struct rte_mbuf ***mbufs);
-uint16_t rx_pkt_hw_pow2_twice(struct task_base *tbase, struct rte_mbuf ***mbufs);
-uint16_t rx_pkt_hw1_twice(struct task_base *tbase, struct rte_mbuf ***mbufs);
+/* The _multi variation of the function is used to work-around the
+   problem with QoS, multi-seg mbufs and vector PMD. When vector
+   PMD returns more than 32 packets, the two variations of the
+   receive function can be merged back together. */
+uint16_t rx_pkt_hw_multi(struct task_base *tbase, struct rte_mbuf ***mbufs);
+uint16_t rx_pkt_hw_pow2_multi(struct task_base *tbase, struct rte_mbuf ***mbufs);
+uint16_t rx_pkt_hw1_multi(struct task_base *tbase, struct rte_mbuf ***mbufs);
 
 uint16_t rx_pkt_sw(struct task_base *tbase, struct rte_mbuf ***mbufs);
 uint16_t rx_pkt_sw_pow2(struct task_base *tbase, struct rte_mbuf ***mbufs);
@@ -59,5 +59,6 @@ uint16_t rx_pkt_trace(struct task_base *tbase, struct rte_mbuf ***mbufs);
 uint16_t rx_pkt_distr(struct task_base *tbase, struct rte_mbuf ***mbufs);
 uint16_t rx_pkt_bw(struct task_base *tbase, struct rte_mbuf ***mbufs);
 uint16_t rx_pkt_tsc(struct task_base *tbase, struct rte_mbuf ***mbufs);
+uint16_t rx_pkt_all(struct task_base *tbase, struct rte_mbuf ***mbufs);
 
 #endif /* _RX_PKT_H_ */

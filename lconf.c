@@ -75,9 +75,9 @@ int core_targ_next(struct lcore_cfg **lconf, struct task_args **targ, const int 
 	return core_targ_next_from(lconf, targ, lcore_cfg, with_master);
 }
 
-int core_targ_next_early(struct lcore_cfg **lconf, struct task_args **targ)
+int core_targ_next_early(struct lcore_cfg **lconf, struct task_args **targ, const int with_master)
 {
-	return core_targ_next_from(lconf, targ, lcore_cfg_init, 0);
+	return core_targ_next_from(lconf, targ, lcore_cfg_init, with_master);
 }
 
 struct task_args *core_targ_get(uint32_t lcore_id, uint32_t task_id)
@@ -222,12 +222,8 @@ int lconf_do_flags(struct lcore_cfg *lconf)
 			if (lconf->msg.type == LCONF_MSG_DUMP ||
 			    lconf->msg.type == LCONF_MSG_DUMP_RX) {
 				t->aux->task_rt_dump.n_print_rx = lconf->msg.val;
-				if (t->aux->rx_pkt_orig)
-					t->rx_pkt = t->aux->rx_pkt_orig;
-				if (t->rx_pkt != rx_pkt_dummy) {
-					t->aux->rx_pkt_orig = t->rx_pkt;
-					t->rx_pkt = rx_pkt_dump;
-				}
+
+				task_base_add_rx_pkt_function(t, rx_pkt_dump);
 			}
 
 			if (lconf->msg.type == LCONF_MSG_DUMP ||
@@ -245,12 +241,9 @@ int lconf_do_flags(struct lcore_cfg *lconf)
 
 		if (lconf->msg.val) {
 			t->aux->task_rt_dump.n_trace = lconf->msg.val;
-			if (t->aux->rx_pkt_orig)
-				t->rx_pkt = t->aux->rx_pkt_orig;
 
-			if (t->rx_pkt != rx_pkt_dummy) {
-				t->aux->rx_pkt_orig = t->rx_pkt;
-				t->rx_pkt = rx_pkt_trace;
+			if (task_base_get_original_rx_pkt_function(t) != rx_pkt_dummy) {
+				task_base_add_rx_pkt_function(t, rx_pkt_trace);
 				t->aux->tx_pkt_orig = t->tx_pkt;
 				t->tx_pkt = tx_pkt_trace;
 			}
@@ -259,9 +252,7 @@ int lconf_do_flags(struct lcore_cfg *lconf)
 	case LCONF_MSG_RX_DISTR_START:
 		for (uint8_t task_id = 0; task_id < lconf->n_tasks_all; ++task_id) {
 			t = lconf->tasks_all[task_id];
-
-			t->aux->rx_pkt_orig = t->rx_pkt;
-			t->rx_pkt = rx_pkt_distr;
+			task_base_add_rx_pkt_function(t, rx_pkt_distr);
 			memset(t->aux->rx_bucket, 0, sizeof(t->aux->rx_bucket));
 			lconf->flags |= LCONF_FLAG_RX_DISTR_ACTIVE;
 		}
@@ -279,11 +270,8 @@ int lconf_do_flags(struct lcore_cfg *lconf)
 	case LCONF_MSG_RX_DISTR_STOP:
 		for (uint8_t task_id = 0; task_id < lconf->n_tasks_all; ++task_id) {
 			t = lconf->tasks_all[task_id];
-			if (t->aux->rx_pkt_orig) {
-				t->rx_pkt = t->aux->rx_pkt_orig;
-				t->aux->rx_pkt_orig = NULL;
-				lconf->flags &= ~LCONF_FLAG_RX_DISTR_ACTIVE;
-			}
+			task_base_del_rx_pkt_function(t, rx_pkt_distr);
+			lconf->flags &= ~LCONF_FLAG_RX_DISTR_ACTIVE;
 		}
 		break;
 	case LCONF_MSG_TX_DISTR_STOP:
@@ -313,20 +301,15 @@ int lconf_do_flags(struct lcore_cfg *lconf)
 	case LCONF_MSG_RX_BW_START:
 		for (uint8_t task_id = 0; task_id < lconf->n_tasks_all; ++task_id) {
 			t = lconf->tasks_all[task_id];
-
-			t->aux->rx_pkt_orig = t->rx_pkt;
-			t->rx_pkt = rx_pkt_bw;
+			task_base_add_rx_pkt_function(t, rx_pkt_bw);
 			lconf->flags |= LCONF_FLAG_RX_BW_ACTIVE;
 		}
 		break;
 	case LCONF_MSG_RX_BW_STOP:
 		for (uint8_t task_id = 0; task_id < lconf->n_tasks_all; ++task_id) {
 			t = lconf->tasks_all[task_id];
-			if (t->aux->rx_pkt_orig) {
-				t->rx_pkt = t->aux->rx_pkt_orig;
-				t->aux->rx_pkt_orig = NULL;
-				lconf->flags &= ~LCONF_FLAG_RX_BW_ACTIVE;
-			}
+			task_base_del_rx_pkt_function(t, rx_pkt_bw);
+			lconf->flags &= ~LCONF_FLAG_RX_BW_ACTIVE;
 		}
 		break;
 	case LCONF_MSG_TX_BW_START:

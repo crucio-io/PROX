@@ -172,7 +172,6 @@ static void handle_qinq_decap6_bulk(struct task_base *tbase, struct rte_mbuf **m
 	task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
 }
 
-
 void update_arp_entries6(void* data)
 {
 	uint64_t cur_tsc = rte_rdtsc();

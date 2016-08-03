@@ -187,7 +187,6 @@ static void init_task_acl(struct task_base *tbase, struct task_args *targ)
 		task->field_defs_size = sizeof(pkt_eth_ipv4_udp_defs);
 	}
 
-
 	acl_param.name = name;
 	acl_param.socket_id = rte_lcore_to_socket_id(targ->lconf->id);
 	acl_param.rule_size = RTE_ACL_RULE_SZ(task->n_field_defs);
@@ -195,7 +194,6 @@ static void init_task_acl(struct task_base *tbase, struct task_args *targ)
 
 	task->n_max_rules = targ->n_max_rules;
 	task->context = rte_acl_create(&acl_param);
-
 
 	PROX_PANIC(task->context == NULL, "Failed to create ACL context\n");
 	uint32_t free_rules = targ->n_max_rules;
@@ -224,7 +222,7 @@ static void init_task_acl(struct task_base *tbase, struct task_args *targ)
 			   "Failed to build ACL trie\n");
 	}
 
-	targ->lconf->ctrl_timeout = rte_get_tsc_hz()/targ->ctrl_freq;
+	targ->lconf->ctrl_timeout = freq_to_tsc(targ->ctrl_freq);
 	targ->lconf->ctrl_func_m[targ->task] = acl_msg;
 }
 

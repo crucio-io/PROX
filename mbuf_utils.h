@@ -34,6 +34,7 @@
 
 #include <string.h>
 
+#include <rte_ip.h>
 #include <rte_version.h>
 #include <rte_ether.h>
 
@@ -57,6 +58,15 @@ static uint16_t mbuf_wire_size(const struct rte_mbuf *mbuf)
 	uint16_t pkt_len = rte_pktmbuf_pkt_len(mbuf);
 
 	return pkt_len_to_wire_size(pkt_len);
+}
+
+static uint16_t mbuf_calc_padlen(const struct rte_mbuf *mbuf, void *pkt, struct ipv4_hdr *ipv4)
+{
+	uint16_t pkt_len = rte_pktmbuf_pkt_len(mbuf);
+	uint16_t ip_offset = (uint8_t *)ipv4 - (uint8_t*)pkt;
+	uint16_t ip_total_len = rte_be_to_cpu_16(ipv4->total_length);
+
+	return pkt_len - ip_total_len - ip_offset;
 }
 
 #endif /* _MBUF_UTILS_H_ */

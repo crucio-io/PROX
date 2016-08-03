@@ -231,10 +231,10 @@ infile.close();
 summary = CsvWriter();
 summary.open(config._output_file_name);
 
-print "Will test up to " + str(config._maxDpiCoreCount) + " DPI cores"
+print "Will test up SUT config with " + str(config._dpiCoreList) + " DPI cores"
 
 for a in inputs:
-    for coreCount in range(1, config._maxDpiCoreCount + 1):
+    for coreCount in config._dpiCoreList:
         downrate, ss = meassurePerf(coreCount, a["msr"], a["conn"], a["ss"]);
         summary.write([coreCount, a["msr"], a["conn"], ss, downrate]);
 

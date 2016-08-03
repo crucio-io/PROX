@@ -48,5 +48,4 @@
 		}							\
 	} while (0)
 
-
 #endif /* _QUIT_H_ */

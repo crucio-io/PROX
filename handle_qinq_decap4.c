@@ -68,6 +68,7 @@ struct task_qinq_decap4 {
 	uint32_t                local_ipv4;
 	uint16_t                qinq_tag;
 	uint8_t                 runtime_flags;
+	int                     offload_crc;
 	uint64_t                keys[64];
 	uint64_t                src_mac[PROX_MAX_PORTS];
 	struct rte_mbuf*        fake_packets[64];
@@ -158,10 +159,15 @@ static void init_task_qinq_decap4(struct task_base *tbase, struct task_args *tar
 		}
 	}
 
+	struct prox_port_cfg *port = find_reachable_port(targ);
+	if (port) {
+		task->offload_crc = port->capabilities.tx_offload_ipv4_cksum;
+	}
+
 	// By default, calling this function 1K times per second => 64K ARP per second max
 	// If 4 interfaces sending to here, = ~0.1% of workload.
 	// If receiving more ARP, they will be dropped, or will dramatically slow down LB if in "no drop" mode.
-	targ->lconf->ctrl_timeout = rte_get_tsc_hz()/targ->ctrl_freq;
+	targ->lconf->ctrl_timeout = freq_to_tsc(targ->ctrl_freq);
 	targ->lconf->ctrl_func_m[targ->task] = arp_msg;
 }
 
@@ -319,7 +325,6 @@ static void arp_update(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_
 	struct qinq_gre_data* entries[64];
 	rte_table_hash_key8_ext_dosig_ops.f_lookup(task->qinq_gre_table, task->fake_packets, pkts_mask, &lookup_hit_mask, (void**)entries);
 
-
 	TASK_STATS_ADD_RX(&task->base.aux->stats, n_pkts);
 	for (uint16_t j = 0; j < n_pkts; ++j) {
 		if (unlikely(!((lookup_hit_mask >> j) & 0x1))) {
@@ -395,8 +400,6 @@ static inline void gre_encap(struct task_qinq_decap4 *task, uint32_t src_ipv4, s
 	struct ipv4_hdr *pip = (struct ipv4_hdr *)(1 + rte_pktmbuf_mtod(mbuf, struct ether_hdr *));
 #endif
 	uint16_t ip_len = rte_be_to_cpu_16(pip->total_length);
-
-
 	uint16_t padlen = rte_pktmbuf_pkt_len(mbuf) - 20 - ip_len - sizeof(struct qinq_hdr);
 
 	if (padlen) {
@@ -406,7 +409,6 @@ static inline void gre_encap(struct task_qinq_decap4 *task, uint32_t src_ipv4, s
 	PROX_PANIC(rte_pktmbuf_data_len(mbuf) - padlen + 20 > ETHER_MAX_LEN,
 	           "Would need to fragment packet new size = %u - not implemented\n",
 	           rte_pktmbuf_data_len(mbuf) - padlen + 20);
-
 
 #ifdef USE_QINQ
 	/* prepend only 20 bytes instead of 28, 8 bytes are present from the QinQ */
@@ -420,9 +422,9 @@ static inline void gre_encap(struct task_qinq_decap4 *task, uint32_t src_ipv4, s
 	if (task->runtime_flags & TASK_TX_CRC) {
 		/* calculate IP CRC here to avoid problems with -O3 flag with gcc */
 #ifdef MPLS_ROUTING
-		prox_ip_cksum(mbuf, pip, sizeof(struct ether_hdr) + sizeof(struct mpls_hdr), sizeof(struct ipv4_hdr));
+		prox_ip_cksum(mbuf, pip, sizeof(struct ether_hdr) + sizeof(struct mpls_hdr), sizeof(struct ipv4_hdr), task->offload_crc);
 #else
-		prox_ip_cksum(mbuf, pip, sizeof(struct ether_hdr), sizeof(struct ipv4_hdr));
+		prox_ip_cksum(mbuf, pip, sizeof(struct ether_hdr), sizeof(struct ipv4_hdr), task->offload_crc);
 #endif
 	}
 
@@ -492,9 +494,9 @@ static inline uint8_t gre_encap_route(uint32_t src_ipv4, struct rte_mbuf *mbuf, 
 	packet->tunnel_ip_hdr.dst_addr = task->next_hops[next_hop_index].ip_dst;
 	if (task->runtime_flags & TASK_TX_CRC) {
 #ifdef MPLS_ROUTING
-		prox_ip_cksum(mbuf, (void *)&(packet->tunnel_ip_hdr), sizeof(struct ether_hdr) + sizeof(struct mpls_hdr), sizeof(struct ipv4_hdr));
+		prox_ip_cksum(mbuf, (void *)&(packet->tunnel_ip_hdr), sizeof(struct ether_hdr) + sizeof(struct mpls_hdr), sizeof(struct ipv4_hdr), task->offload_crc);
 #else
-		prox_ip_cksum(mbuf, (void *)&(packet->tunnel_ip_hdr), sizeof(struct ether_hdr), sizeof(struct ipv4_hdr));
+		prox_ip_cksum(mbuf, (void *)&(packet->tunnel_ip_hdr), sizeof(struct ether_hdr), sizeof(struct ipv4_hdr), task->offload_crc);
 #endif
 	}
 

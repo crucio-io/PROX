@@ -45,19 +45,17 @@
 #include "lconf.h"
 #include "quit.h"
 
-static int compare_tx_time(void const *val1, void const *val2)
+static int compare_tx_time(const void *val1, const void *val2)
 {
-	struct lat_info const *ptr1 = val1;
-	struct lat_info const *ptr2 = val2;
+	const struct lat_info *ptr1 = val1;
+	const struct lat_info *ptr2 = val2;
+
 	return ptr1->tx_time - ptr2->tx_time;
 }
 
-static int compare_queue_id(void const *val1, void const *val2)
+static int compare_queue_id(const void *val1, const void *val2)
 {
-	struct lat_info const *ptr1 = val1;
-	struct lat_info const *ptr2 = val2;
-	((1L * (ptr1->port_queue_id - ptr2->port_queue_id)) << 32) | (ptr1->tx_packet_index - ptr2->tx_packet_index);
-	return ptr1->tx_time - ptr2->tx_time;
+	return compare_tx_time(val1, val2);
 }
 
 static void fix_latency_buffer_tx_time(struct lat_info *lat, uint32_t count)
@@ -287,10 +285,8 @@ static uint32_t abs_diff(uint32_t a, uint32_t b)
        return a < b? UINT32_MAX - (b - a - 1) : a - b;
 }
 
-static uint64_t tsc_extrapolate_backward(uint64_t tsc_from, uint64_t bytes, uint64_t tsc_minimum, uint8_t through_ring)
+static uint64_t tsc_extrapolate_backward(uint64_t tsc_from, uint64_t bytes, uint64_t tsc_minimum)
 {
-	if (through_ring)
-		return tsc_from;
 	uint64_t tsc = tsc_from - rte_get_tsc_hz()*bytes/1250000000;
 	if (likely(tsc > tsc_minimum))
 		return tsc;
@@ -319,6 +315,7 @@ static void lat_test_update(struct task_lat *task, struct lat_test *lat_test, ui
 	lat_test->tot_rx_acc += rx_err;
 	lat_test->tot_tx_acc += tx_err;
 	lat_test->tot_pkts++;
+	lat_test->var_lat += lat_time*lat_time;
 
 	if (lat_time > lat_test->max_lat) {
 		lat_test->max_lat = lat_time;
@@ -335,14 +332,13 @@ static void lat_test_update(struct task_lat *task, struct lat_test *lat_test, ui
 		lat_test->max_tx_acc = tx_err;
 	}
 
-#ifndef NO_LATENCY_PER_PACKET
+#ifdef LATENCY_PER_PACKET
 	lat_test->lat[lat_test->cur_pkt++] = lat_time;
 	if (lat_test->cur_pkt == MAX_PACKETS_FOR_LATENCY)
 		lat_test->cur_pkt = 0;
 #endif
 
-#ifndef NO_LATENCY_DETAILS
-	lat_test->var_lat += lat_time*lat_time;
+#ifdef LATENCY_DETAILS
 	lat_test_histogram_add(task, lat_test, lat_time);
 #endif
 }
@@ -358,35 +354,19 @@ static void handle_lat_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, ui
 	struct lat_test *lat_test;
 	uint64_t rx_tsc_err;
 
-	uint32_t pkt_rx_time, pkt_rx_time_verified, pkt_tx_time;
+	uint32_t pkt_rx_time, pkt_tx_time;
 	uint64_t bytes_since_last_pkt = 0;
 	uint64_t lat_time = 0;
 	uint8_t port_queue_id = 0;
-	struct rte_mbuf **m;
+
+	if (n_pkts == 0) {
+		task->begin = tbase->aux->tsc_rx.before;
+		return;
+	}
 
 	lat_test = task_lat_get_lat_test(task);
 
-	uint16_t tot = 0;
-
-	// If 64 packets or more, buffer them.
-	if (n_pkts == 64) {
-		memcpy(task->mbufs + tot, mbufs, n_pkts * sizeof(mbufs));
-		tot += n_pkts;
-		while ((n_pkts == 64) && (tot <= task->mbuf_size - 64)) {
-			n_pkts = tbase->rx_pkt(tbase, &mbufs);
-			memcpy(task->mbufs + tot, mbufs, n_pkts * sizeof(mbufs));
-			tot += n_pkts;
-		}
-		if (n_pkts == 64) {
-			plog_err("handle_lat unable to catch up - buffer full\n");
-		}
-		m = task->mbufs;
-		n_pkts = tot;
-	} else {
-		m = mbufs;
-	}
 	const uint64_t rx_tsc = tbase->aux->tsc_rx.after;
-
 	/* Only record latency for first packets */
 	if (task->rx_packet_index >= UINT32_MAX - n_pkts)
 		task->rx_packet_index = UINT32_MAX - n_pkts;
@@ -402,7 +382,7 @@ static void handle_lat_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, ui
 	// If packet has just been modified by another core,
 	// the cost of latency will be partialy amortized though the bulk size
 	for (uint16_t j = 0; j < n_pkts; ++j) {
-		struct rte_mbuf *mbuf = m[n_pkts - 1 - j];
+		struct rte_mbuf *mbuf = mbufs[n_pkts - 1 - j];
 		task->hdr[j] = rte_pktmbuf_mtod(mbuf, uint8_t *);
 	}
 	for (uint16_t j = 0; j < n_pkts; ++j) {
@@ -411,21 +391,20 @@ static void handle_lat_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, ui
 
 	// Find RX time of first packet, for RX accuracy
 	for (uint16_t j = 1; j < n_pkts; ++j) {
-		hdr = task->hdr[j];
-		bytes_since_last_pkt += mbuf_wire_size(m[n_pkts - 1 - j]);
+		bytes_since_last_pkt += mbuf_wire_size(mbufs[n_pkts - 1 - j]);
 	}
-	pkt_rx_time = tsc_extrapolate_backward(rx_tsc, bytes_since_last_pkt, task->last_pkts_tsc, task->through_ring) >> LATENCY_ACCURACY;
-	if ((uint32_t)((tbase->aux->tsc_rx.begin >> LATENCY_ACCURACY)) > pkt_rx_time) {
+	pkt_rx_time = tsc_extrapolate_backward(rx_tsc, bytes_since_last_pkt, task->last_pkts_tsc) >> LATENCY_ACCURACY;
+	if ((uint32_t)((task->begin >> LATENCY_ACCURACY)) > pkt_rx_time) {
 		// Extrapolation went up to BEFORE begin => packets were stuck in the NIC but we were not seeing them
 		rx_tsc_err = pkt_rx_time - (uint32_t)((task->last_pkts_tsc >> LATENCY_ACCURACY));
 	} else {
-		rx_tsc_err = pkt_rx_time - (uint32_t)((tbase->aux->tsc_rx.begin >> LATENCY_ACCURACY));
+		rx_tsc_err = pkt_rx_time - (uint32_t)((task->begin >> LATENCY_ACCURACY));
 	}
 
 	bytes_since_last_pkt = 0;
 	for (uint16_t j = 0; j < n_pkts; ++j) {
 		hdr = task->hdr[j];
-		pkt_rx_time = tsc_extrapolate_backward(rx_tsc, bytes_since_last_pkt, task->last_pkts_tsc, task->through_ring) >> LATENCY_ACCURACY;
+		pkt_rx_time = tsc_extrapolate_backward(rx_tsc, bytes_since_last_pkt, task->last_pkts_tsc) >> LATENCY_ACCURACY;
 		if (task->accur_pos) {
 			tx_tsc_err = *(uint32_t *)(hdr + task->accur_pos);
 		}
@@ -439,13 +418,12 @@ static void handle_lat_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, ui
 			task_lat_early_loss_detect(task, port_queue_id, tx_packet_index);
 		}
 
-
 		if (task_lat_can_store_latency(task, rx_packet_index)) {
 			task_lat_store_lat_buf(task, rx_packet_index, tx_packet_index, port_queue_id, lat_time, pkt_rx_time, pkt_tx_time, rx_tsc_err, tx_tsc_err);
 		}
 
 		lat_test_update(task, lat_test, lat_time, rx_tsc_err, tx_tsc_err, task->lost_packets);
-		bytes_since_last_pkt += mbuf_wire_size(m[n_pkts - 1 - j]);
+		bytes_since_last_pkt += mbuf_wire_size(mbufs[n_pkts - 1 - j]);
 		rx_packet_index--;
 	}
 #ifdef LAT_DEBUG
@@ -459,8 +437,8 @@ static void handle_lat_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, ui
 		}
 	}
 #endif
-	task->base.tx_pkt(&task->base, m, n_pkts, NULL);
-	tbase->aux->tsc_rx.begin = tbase->aux->tsc_rx.before;
+	task->base.tx_pkt(&task->base, mbufs, n_pkts, NULL);
+	task->begin = tbase->aux->tsc_rx.before;
 	task->last_pkts_tsc = tbase->aux->tsc_rx.after;
 }
 
@@ -514,16 +492,11 @@ static void init_task_lat(struct task_base *tbase, struct task_args *targ)
                 	}
                	}
         }
-	task->mbuf_size = 16384; // more or less 1 msec
-	task->mbufs = prox_zmalloc(task->mbuf_size * sizeof(* task->mbufs), socket_id);
-	PROX_PANIC(task->mbufs == NULL, "unable to allocate memory to store received mbufs pointers");
-	task->pkt_tx_time = prox_zmalloc(task->mbuf_size * sizeof(uint32_t), socket_id);
-	PROX_PANIC(task->mbufs == NULL, "unable to allocate memory to store tx accuracy");
-	task->hdr = prox_zmalloc(task->mbuf_size * sizeof(uint8_t *), socket_id);
-	PROX_PANIC(task->mbufs == NULL, "unable to allocate memory to store hdr");
-	if ((targ->nb_txrings == 1) && (targ->nb_txports == 0)) {
-		task->through_ring = 1;
-	}
+
+	task->pkt_tx_time = prox_zmalloc(MAX_RX_PKT_ALL * sizeof(*task->pkt_tx_time), socket_id);
+	PROX_PANIC(task->pkt_tx_time == NULL, "unable to allocate memory to store tx accuracy");
+	task->hdr = prox_zmalloc(MAX_RX_PKT_ALL * sizeof(*task->hdr), socket_id);
+	PROX_PANIC(task->hdr == NULL, "unable to allocate memory to store hdr");
 }
 
 static struct task_init task_init_lat = {
@@ -531,7 +504,7 @@ static struct task_init task_init_lat = {
 	.init = init_task_lat,
 	.handle = handle_lat_bulk,
 	.stop = lat_stop,
-	.flag_features = TASK_FEATURE_TSC_RX | TASK_FEATURE_TWICE_RX | TASK_FEATURE_NEVER_DISCARDS,
+	.flag_features = TASK_FEATURE_TSC_RX | TASK_FEATURE_RX_ALL | TASK_FEATURE_ZERO_RX | TASK_FEATURE_NEVER_DISCARDS,
 	.size = sizeof(struct task_lat)
 };
 

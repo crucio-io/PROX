@@ -29,47 +29,45 @@
   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#ifndef _THREAD_PIPELINE_H_
-#define _THREAD_PIPELINE_H_
+/*
+  This pseudorandom number generator is based on ref_xorshift128plus,
+  as implemented by reference_xorshift.h, which has been obtained
+  from https://sourceforge.net/projects/xorshift-cpp/
 
-#include <rte_pipeline.h>
+  The licensing terms for reference_xorshift.h are reproduced below.
 
-#include "lconf.h"
-#include "task_base.h"
+  //  Written in 2014 by Ivo Doko (ivo.doko@gmail.com)
+  //  based on code written by Sebastiano Vigna (vigna@acm.org)
+  //  To the extent possible under law, the author has dedicated
+  //  all copyright and related and neighboring rights to this
+  //  software to the public domain worldwide. This software is
+  //  distributed without any warranty.
+  //  See <http://creativecommons.org/publicdomain/zero/1.0/>.
+*/
 
-/* Tasks based on Packet Framework pipelines */
-struct task_pipe {
-	struct task_base base;
+#ifndef _RANDOM_H_
+#define _RANDOM_H_
 
-	struct rte_pipeline *p;
-	uint32_t port_in_id[MAX_RINGS_PER_TASK];
-	uint32_t port_out_id[MAX_RINGS_PER_TASK];
-	uint32_t table_id[MAX_RINGS_PER_TASK];
-	uint8_t n_ports_in;
-	uint8_t n_ports_out;
-	uint8_t n_tables;
+#include <rte_cycles.h>
+
+struct random {
+  uint64_t state[2];
 };
 
-/* Helper function: create pipeline, input ports and output ports */
-void init_pipe_create_in_out(struct task_pipe *tpipe, struct task_args *targ);
+static void random_init_seed(struct random *random)
+{
+  random->state[0] = rte_rdtsc();
+  random->state[1] = rte_rdtsc();
+}
 
-/* Helper function: connect pipeline input ports to one pipeline table */
-void init_pipe_connect_one(struct task_pipe *tpipe, struct task_args *targ, uint32_t table_id);
+static uint64_t random_next(struct random *random)
+{
+  const uint64_t s0 = random->state[1];
+  const uint64_t s1 = random->state[0] ^ (random->state[0] << 23);
 
-/* Helper function: connect pipeline input ports to all pipeline tables */
-void init_pipe_connect_all(struct task_pipe *tpipe, struct task_args *targ);
+  random->state[0] = random->state[1];
+  random->state[1] = (s1 ^ (s1 >> 18) ^ s0 ^ (s0 >> 5)) + s0;
+  return random->state[1];
+}
 
-/* Helper function: enable pipeline input ports */
-void init_pipe_enable(struct task_pipe *tpipe, struct task_args *targ);
-
-/* Helper function: check pipeline consistency */
-void init_pipe_check(struct task_pipe *tpipe, struct task_args *targ);
-
-/* This function will panic on purpose: tasks based on Packet Framework
-   pipelines should not be invoked via the usual task_base.handle_bulk method */
-void handle_pipe(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts);
-
-/* The pipeline thread can only run tasks based on Packet Framework pipelines */
-int thread_pipeline(struct lcore_cfg *lconf);
-
-#endif /* _THREAD_PIPELINE_H_ */
+#endif /* _RANDOM_H_ */

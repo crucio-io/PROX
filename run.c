@@ -167,7 +167,6 @@ void __attribute__((noreturn)) run(uint32_t flags)
 	stats_init(prox_cfg.start_time, prox_cfg.duration_time);
 	stats_update(STATS_CONS_F_ALL);
 
-
 	switch (prox_cfg.ui) {
 	case PROX_UI_CURSES:
 		reg_input_curses();
@@ -224,5 +223,6 @@ void __attribute__((noreturn)) run(uint32_t flags)
 		file_print(prox_cfg.logbuf);
 	}
 
+	display_end();
 	exit(EXIT_SUCCESS);
 }

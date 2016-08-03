@@ -54,7 +54,6 @@
 #define DSF_KEEP_SRC_MAC          0x00000200      /* In gen mode, do not overwrite src_mac by mac of physical port */
 #define DSF_MP_RINGS              0x00000400      /* Use Multi Producer rings when possible */
 
-
 #define MAX_PATH_LEN 1024
 
 enum prox_ui {

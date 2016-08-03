@@ -56,20 +56,20 @@ static inline void prepare_arp_reply(struct task_arp *task, struct ether_hdr_arp
 	memcpy(&packet->arp.data.sha, &s_addr, sizeof(struct ether_addr));
 }
 
-static void create_mac(struct task_arp *task, struct ether_addr *addr)
+static void create_mac(struct task_arp *task, struct ether_hdr_arp *hdr, struct ether_addr *addr)
 {
-	uint32_t rand = rand_r(&task->seed);
-
 	addr->addr_bytes[0] = 0x2;
 	addr->addr_bytes[1] = task->base.tx_params_hw_sw.tx_port_queue.port;
-	memcpy(addr->addr_bytes + 2, &rand, 4);
+	// Instead of sending a completely random MAC address, create the following MAC:
+	// 02:x0:x1:x2:x3:x4 where x0 is a port number and x1:x2:x3:x4 is the IP address
+	memcpy(addr->addr_bytes + 2, (uint32_t *)&hdr->arp.data.tpa, 4);
 }
 
 static void handle_arp(struct task_arp *task, struct ether_hdr_arp *hdr)
 {
 	struct ether_addr s_addr;
 
-	create_mac(task, &s_addr);
+	create_mac(task, hdr, &s_addr);
 	prepare_arp_reply(task, hdr, s_addr);
 
 	memcpy(hdr->ether_hdr.d_addr.addr_bytes, hdr->ether_hdr.s_addr.addr_bytes, 6);

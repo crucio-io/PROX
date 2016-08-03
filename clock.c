@@ -74,7 +74,6 @@ void prox_init_tsc_overhead(void)
 
 	rdtsc_overhead = min_with_overhead - min_without_overhead;
 
-
 	start1 = rte_rdtsc();
 	end1   = rte_rdtsc();
 	/* forbid the compiler to optimize this dummy variable */
@@ -156,6 +155,11 @@ uint64_t nsec_to_tsc(uint64_t nsec)
 		return nsec * rte_get_tsc_hz() / 1000000000;
 	else
 		return nsec / 1000000000 * rte_get_tsc_hz();
+}
+
+uint64_t freq_to_tsc(uint64_t times_per_sec)
+{
+	return rte_get_tsc_hz()/times_per_sec;
 }
 
 void tsc_to_tv(struct timeval *tv, const uint64_t tsc)

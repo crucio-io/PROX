@@ -104,7 +104,7 @@ def runTest(minSetupRate, testParam):
         testLength -= config._interCheckDuration
         sleep(config._interCheckDuration)
         testers.update_stats();
-        if (config._checkConditions and not testers.conditionsGood()):
+        if (not testers.conditionsGood()):
             print "conditions are bad: " + testers.getReason();
             testers.killProx();
             return False, [];

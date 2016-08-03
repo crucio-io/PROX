@@ -29,12 +29,54 @@
 #  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-bad_lines=$(grep -nHr -e " $" *.c)
+bad_lines=$(grep -nHr -e "[[:space:]]$" *.c *.h gen/*.cfg config/*.cfg)
 
 if [ -n "$bad_lines" ]; then
     echo "Found trailing white-spaces:"
     echo $bad_lines
     exit 1;
-else
-    exit 0;
 fi
+
+for f in *.c *.h gen/*.cfg config/*.cfg; do
+    result=$(tail -n 1 $f | grep "^$" | wc -l)
+
+    if [ "$result" == "1" ]; then
+        echo "Trailing newlines at end of file $f"
+        exit 1
+    fi
+done;
+
+prev="dummy"
+function findDuplicate() {
+    line=1
+    while read p; do
+	if [ "$prev" == "" ]; then
+	    if [ "$p" == "" ]; then
+		echo "duplicate empty line at $1:$line"
+		bad=1
+	    fi
+	fi
+	prev=$p
+	let "line+=1"
+    done <$1
+}
+
+bad=0
+for f in *.c *.h; do
+    findDuplicate $f
+done;
+
+if [ "$bad" != "0" ]; then
+    exit 1
+fi
+
+tab="	"
+bad_lines=$(grep -nHr -e "^$tab$tab$tab$tab$tab$tab$tab" *.c *.h | head -n1)
+
+if [ -n "$bad_lines" ]; then
+    echo "Code nested too deep:"
+    echo $bad_lines
+    exit 1;
+fi
+
+exit 0

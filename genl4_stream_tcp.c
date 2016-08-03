@@ -250,6 +250,62 @@ uint16_t stream_tcp_reply_len(struct stream_ctx *ctx)
 		return ctx->stream_cfg->data[ctx->peer].hdr_len + sizeof(struct tcp_hdr);
 }
 
+static void stream_tcp_proc_in_order_data(struct stream_ctx *ctx, struct l4_meta *l4_meta, int *progress_seq)
+{
+	plogx_dbg("Got data with seq %d (as expected), with len %d\n", ctx->recv_seq, l4_meta->len);
+
+	if (!l4_meta->len)
+		return;
+
+	const struct peer_action *act = &ctx->stream_cfg->actions[ctx->cur_action];
+	enum l4gen_peer peer = act->peer;
+	/* Since we have received the expected sequence number, the start address will not exceed the cfg memory buffer. */
+	uint8_t *content = ctx->stream_cfg->data[peer].content;
+	uint32_t seq_beg = ctx->recv_seq - ctx->other_seq_first_byte;
+	uint32_t end = ctx->stream_cfg->actions[ctx->cur_action].beg + ctx->stream_cfg->actions[ctx->cur_action].len;
+	uint32_t remaining = end - seq_beg;
+
+	if (l4_meta->len > remaining) {
+		plogx_err("Provided data is too long:\n");
+		plogx_err("action.beg = %d, action.len = %d", act->beg, act->len);
+		plogx_err("tcp seq points at %d in action, l4_meta->len = %d\n", seq_beg, l4_meta->len);
+	}
+	else {
+		if (memcmp(content + seq_beg, l4_meta->payload, l4_meta->len) == 0) {
+			plogx_dbg("Good payload in %d: %u -> %u\n", ctx->cur_action, ctx->recv_seq, l4_meta->len);
+			ctx->recv_seq += l4_meta->len;
+			ctx->cur_pos[peer] += l4_meta->len;
+			/* Move forward only when this was the last piece of data within current action (i.e. end of received data == end of action data). */
+			if (seq_beg + l4_meta->len == act->beg + act->len) {
+				plogx_dbg("Got last piece in action %d\n", ctx->cur_action);
+				ctx->cur_action++;
+			}
+			else {
+				plogx_dbg("Got data from %d with len %d, but waiting for more (tot len = %d)!\n", seq_beg, l4_meta->len, act->len);
+			}
+			*progress_seq = 1;
+			ctx->flags |= STREAM_CTX_F_NEW_DATA;
+		}
+		else {
+			plogx_err("ackable = %d, ackd = %d\n", ctx->ackable_data_seq ,ctx->ackd_seq);
+			plogx_err("Bad payload action[%d]{.len = %d, .peer  = %s}\n", ctx->cur_action, act->len, peer == PEER_SERVER? "s" : "c");
+			plogx_err("   pkt payload len = %d, beginning at %u\n", l4_meta->len, seq_beg);
+			/* plogx_err("   Payload starts %zu bytes after beginning of l4_hdr\n", l4_meta->payload - l4_meta->l4_hdr); */
+
+			plogx_err("   payload[0-3] = %02x %02x %02x %02x\n",
+				  l4_meta->payload[0],
+				  l4_meta->payload[1],
+				  l4_meta->payload[2],
+				  l4_meta->payload[3]);
+			plogx_err("   expect[0-3]  = %02x %02x %02x %02x\n",
+				  content[seq_beg + 0],
+				  content[seq_beg + 1],
+				  content[seq_beg + 2],
+				  content[seq_beg + 3]);
+		}
+	}
+}
+
 static int stream_tcp_proc_in(struct stream_ctx *ctx, struct l4_meta *l4_meta)
 {
 	struct tcp_hdr *tcp = NULL;
@@ -345,57 +401,7 @@ static int stream_tcp_proc_in(struct stream_ctx *ctx, struct l4_meta *l4_meta)
 	else {
 		/* Only expect in-order packets. */
 		if (ctx->recv_seq == seq) {
-			plogx_dbg("Got data with seq %d (as expected), with len %d\n", seq, l4_meta->len);
-
-			if (l4_meta->len) {
-				const struct peer_action *act = &ctx->stream_cfg->actions[ctx->cur_action];
-				enum l4gen_peer peer = act->peer;
-				/* Since we have received the expected sequence number, the start address will not exceed the cfg memory buffer. */
-				uint8_t *content = ctx->stream_cfg->data[peer].content;
-				uint32_t seq_beg = seq - ctx->other_seq_first_byte;
-				uint32_t end = ctx->stream_cfg->actions[ctx->cur_action].beg + ctx->stream_cfg->actions[ctx->cur_action].len;
-				uint32_t remaining = end - seq_beg;
-
-				if (l4_meta->len > remaining) {
-					plogx_err("Provided data is too long:\n");
-					plogx_err("action.beg = %d, action.len = %d", act->beg, act->len);
-					plogx_err("tcp seq points at %d in action, l4_meta->len = %d\n", seq_beg, l4_meta->len);
-				}
-				else {
-					if (memcmp(content + seq_beg, l4_meta->payload, l4_meta->len) == 0) {
-						plogx_dbg("Good payload in %d: %u -> %u\n", ctx->cur_action, seq, l4_meta->len);
-						ctx->recv_seq = seq + l4_meta->len;
-						ctx->cur_pos[peer] += l4_meta->len;
-						/* Move forward only when this was the last piece of data within current action (i.e. end of received data == end of action data). */
-						if (seq_beg + l4_meta->len == act->beg + act->len) {
-							plogx_dbg("Got last piece in action %d\n", ctx->cur_action);
-							ctx->cur_action++;
-						}
-						else {
-							plogx_dbg("Got data from %d with len %d, but waiting for more (tot len = %d)!\n", seq_beg, l4_meta->len, act->len);
-						}
-						progress_seq = 1;
-						ctx->flags |= STREAM_CTX_F_NEW_DATA;
-					}
-					else {
-						plogx_err("ackable = %d, ackd = %d\n", ctx->ackable_data_seq ,ctx->ackd_seq);
-						plogx_err("Bad payload action[%d]{.len = %d, .peer  = %s}\n", ctx->cur_action, act->len, peer == PEER_SERVER? "s" : "c");
-						plogx_err("   pkt payload len = %d, beginning at %u\n", l4_meta->len, seq_beg);
-						/* plogx_err("   Payload starts %zu bytes after beginning of l4_hdr\n", l4_meta->payload - l4_meta->l4_hdr); */
-
-						plogx_err("   payload[0-3] = %02x %02x %02x %02x\n",
-							  l4_meta->payload[0],
-							  l4_meta->payload[1],
-							  l4_meta->payload[2],
-							  l4_meta->payload[3]);
-						plogx_err("   expect[0-3]  = %02x %02x %02x %02x\n",
-							  content[seq_beg + 0],
-							  content[seq_beg + 1],
-							  content[seq_beg + 2],
-							  content[seq_beg + 3]);
-					}
-				}
-			}
+			stream_tcp_proc_in_order_data(ctx, l4_meta, &progress_seq);
 		}
 		else if (ctx->recv_seq < seq) {
 			plogx_dbg("Future data received (got = %d, expected = %d), missing data! (data ignored)\n", seq, ctx->recv_seq);
@@ -515,7 +521,6 @@ static int stream_tcp_proc_out_syn_sent(struct stream_ctx *ctx, struct rte_mbuf 
 
 	ctx->same_state = 0;
 	ctx->tcp_state = ESTABLISHED;
-
 
 	/* third packet of three-way handshake will also contain
 	   data. Don't send separate ACK yet. TODO: only send ACK if

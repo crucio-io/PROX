@@ -43,13 +43,49 @@
 
 /* _param version of the rx_pkt_hw functions are used to create two
    instances of very similar variations of these functions. The
-   variations are specified by the "twice" parameter which significies
-   that the rte_eth_rx_burst function should be called twice. The
-   reason for this is that with the vector PMD, the maximum number of
-   packets being returned is 32 and some algorithms (like QoS) only
-   work correctly if more than 32 packets are received if the dequeue
-   step involves finding 32 packets. */
-static uint16_t rx_pkt_hw_param(struct task_base *tbase, struct rte_mbuf ***mbufs, int twice)
+   variations are specified by the "multi" parameter which significies
+   that the rte_eth_rx_burst function should be called multiple times.
+   The reason for this is that with the vector PMD, the maximum number
+   of packets being returned is 32. If packets have been split in
+   multiple mbufs then rte_eth_rx_burst might even receive less than
+   32 packets.
+   Some algorithms (like QoS) only work correctly if more than 32
+   packets are received if the dequeue step involves finding 32 packets.
+*/
+
+#define MIN_PMD_RX 16
+
+static uint16_t rx_pkt_hw_port_queue(struct port_queue *pq, struct rte_mbuf **mbufs, int multi)
+{
+	uint16_t nb_rx, n;
+
+	nb_rx = rte_eth_rx_burst(pq->port, pq->queue, mbufs, MAX_PKT_BURST);
+
+	if (multi) {
+		n = nb_rx;
+		while (n != 0 && MAX_PKT_BURST - nb_rx >= MIN_PMD_RX) {
+			n = rte_eth_rx_burst(pq->port, pq->queue, mbufs + nb_rx, MIN_PMD_RX);
+			nb_rx += n;
+		}
+	}
+	return nb_rx;
+}
+
+static void next_port(struct rx_params_hw *rx_params_hw)
+{
+	++rx_params_hw->last_read_portid;
+	if (unlikely(rx_params_hw->last_read_portid == rx_params_hw->nb_rxports)) {
+		rx_params_hw->last_read_portid = 0;
+	}
+}
+
+static void next_port_pow2(struct rx_params_hw *rx_params_hw)
+{
+	rx_params_hw->last_read_portid = (rx_params_hw->last_read_portid + 1) & rx_params_hw->rxport_mask;
+}
+
+static uint16_t rx_pkt_hw_param(struct task_base *tbase, struct rte_mbuf ***mbufs, int multi,
+				void (*next)(struct rx_params_hw *rx_param_hw))
 {
 	uint8_t last_read_portid;
 	uint16_t nb_rx;
@@ -59,52 +95,10 @@ static uint16_t rx_pkt_hw_param(struct task_base *tbase, struct rte_mbuf ***mbuf
 		(RTE_ALIGN_CEIL(tbase->ws_mbuf->idx[0].prod, 2) & WS_MBUF_MASK);
 
 	last_read_portid = tbase->rx_params_hw.last_read_portid;
-	nb_rx = rte_eth_rx_burst(tbase->rx_params_hw.rx_pq[last_read_portid].port,
-				 tbase->rx_params_hw.rx_pq[last_read_portid].queue,
-				 *mbufs, MAX_PKT_BURST);
+	struct port_queue *pq = &tbase->rx_params_hw.rx_pq[last_read_portid];
 
-	if (twice) {
-		if (nb_rx == 32) {
-			nb_rx += rte_eth_rx_burst(tbase->rx_params_hw.rx_pq[last_read_portid].port,
-				 tbase->rx_params_hw.rx_pq[last_read_portid].queue,
-				 *mbufs + 32, MAX_PKT_BURST);
-		}
-	}
-
-	++tbase->rx_params_hw.last_read_portid;
-	if (unlikely(tbase->rx_params_hw.last_read_portid == tbase->rx_params_hw.nb_rxports)) {
-		tbase->rx_params_hw.last_read_portid = 0;
-	}
-	if (likely(nb_rx > 0)) {
-		TASK_STATS_ADD_RX(&tbase->aux->stats, nb_rx);
-		return nb_rx;
-	}
-	TASK_STATS_ADD_IDLE(&tbase->aux->stats, rte_rdtsc() - cur_tsc);
-	return 0;
-}
-
-static uint16_t rx_pkt_hw_pow2_param(struct task_base *tbase, struct rte_mbuf ***mbufs, int twice)
-{
-	uint8_t lr;
-	uint16_t nb_rx;
-
-	START_EMPTY_MEASSURE();
-	*mbufs = tbase->ws_mbuf->mbuf[0] +
-		(RTE_ALIGN_CEIL(tbase->ws_mbuf->idx[0].prod, 2) & WS_MBUF_MASK);
-	lr = tbase->rx_params_hw.last_read_portid;
-	nb_rx = rte_eth_rx_burst(tbase->rx_params_hw.rx_pq[lr].port,
-				 tbase->rx_params_hw.rx_pq[lr].queue,
-				 *mbufs, MAX_PKT_BURST);
-
-	if (twice) {
-		if (nb_rx == 32) {
-			nb_rx += rte_eth_rx_burst(tbase->rx_params_hw.rx_pq[lr].port,
-						  tbase->rx_params_hw.rx_pq[lr].queue,
-						  *mbufs + 32, MAX_PKT_BURST);
-		}
-	}
-
-	tbase->rx_params_hw.last_read_portid = (lr + 1) & tbase->rx_params_hw.rxport_mask;
+	nb_rx = rx_pkt_hw_port_queue(pq, *mbufs, multi);
+	next(&tbase->rx_params_hw);
 
 	if (likely(nb_rx > 0)) {
 		TASK_STATS_ADD_RX(&tbase->aux->stats, nb_rx);
@@ -114,9 +108,9 @@ static uint16_t rx_pkt_hw_pow2_param(struct task_base *tbase, struct rte_mbuf **
 	return 0;
 }
 
-static inline uint16_t rx_pkt_hw1_param(struct task_base *tbase, struct rte_mbuf ***mbufs, int twice)
+static inline uint16_t rx_pkt_hw1_param(struct task_base *tbase, struct rte_mbuf ***mbufs, int multi)
 {
-	uint16_t nb_rx;
+	uint16_t nb_rx, n;
 
 	START_EMPTY_MEASSURE();
 	*mbufs = tbase->ws_mbuf->mbuf[0] +
@@ -126,11 +120,13 @@ static inline uint16_t rx_pkt_hw1_param(struct task_base *tbase, struct rte_mbuf
 				 tbase->rx_params_hw1.rx_pq.queue,
 				 *mbufs, MAX_PKT_BURST);
 
-	if (twice) {
-		if (nb_rx == 32) {
-			nb_rx += rte_eth_rx_burst(tbase->rx_params_hw1.rx_pq.port,
+	if (multi) {
+		n = nb_rx;
+		while ((n != 0) && (MAX_PKT_BURST - nb_rx >= 16)) {
+			n = rte_eth_rx_burst(tbase->rx_params_hw1.rx_pq.port,
 				 tbase->rx_params_hw1.rx_pq.queue,
-				 *mbufs + 32, MAX_PKT_BURST);
+				 *mbufs + nb_rx, 16);
+			nb_rx += n;
 		}
 	}
 
@@ -144,12 +140,12 @@ static inline uint16_t rx_pkt_hw1_param(struct task_base *tbase, struct rte_mbuf
 
 uint16_t rx_pkt_hw(struct task_base *tbase, struct rte_mbuf ***mbufs)
 {
-	return rx_pkt_hw_param(tbase, mbufs, 0);
+	return rx_pkt_hw_param(tbase, mbufs, 0, next_port);
 }
 
 uint16_t rx_pkt_hw_pow2(struct task_base *tbase, struct rte_mbuf ***mbufs)
 {
-	return rx_pkt_hw_pow2_param(tbase, mbufs, 0);
+	return rx_pkt_hw_param(tbase, mbufs, 0, next_port_pow2);
 }
 
 uint16_t rx_pkt_hw1(struct task_base *tbase, struct rte_mbuf ***mbufs)
@@ -157,17 +153,17 @@ uint16_t rx_pkt_hw1(struct task_base *tbase, struct rte_mbuf ***mbufs)
 	return rx_pkt_hw1_param(tbase, mbufs, 0);
 }
 
-uint16_t rx_pkt_hw_twice(struct task_base *tbase, struct rte_mbuf ***mbufs)
+uint16_t rx_pkt_hw_multi(struct task_base *tbase, struct rte_mbuf ***mbufs)
 {
-	return rx_pkt_hw_param(tbase, mbufs, 1);
+	return rx_pkt_hw_param(tbase, mbufs, 1, next_port);
 }
 
-uint16_t rx_pkt_hw_pow2_twice(struct task_base *tbase, struct rte_mbuf ***mbufs)
+uint16_t rx_pkt_hw_pow2_multi(struct task_base *tbase, struct rte_mbuf ***mbufs)
 {
-	return rx_pkt_hw_pow2_param(tbase, mbufs, 1);
+	return rx_pkt_hw_param(tbase, mbufs, 1, next_port_pow2);
 }
 
-uint16_t rx_pkt_hw1_twice(struct task_base *tbase, struct rte_mbuf ***mbufs)
+uint16_t rx_pkt_hw1_multi(struct task_base *tbase, struct rte_mbuf ***mbufs)
 {
 	return rx_pkt_hw1_param(tbase, mbufs, 1);
 }
@@ -278,6 +274,21 @@ uint16_t rx_pkt_sw1(struct task_base *tbase, struct rte_mbuf ***mbufs)
 	}
 }
 
+static uint16_t call_prev_rx_pkt(struct task_base *tbase, struct rte_mbuf ***mbufs)
+{
+	uint16_t ret;
+
+	if (tbase->aux->rx_prev_idx + 1 == tbase->aux->rx_prev_count) {
+		ret = tbase->aux->rx_pkt_prev[tbase->aux->rx_prev_idx](tbase, mbufs);
+	} else {
+		tbase->aux->rx_prev_idx++;
+		ret = tbase->aux->rx_pkt_prev[tbase->aux->rx_prev_idx](tbase, mbufs);
+		tbase->aux->rx_prev_idx--;
+	}
+
+	return ret;
+}
+
 /* Only used when there are packets to be dumped. This function is
    meant as a debugging tool and is therefore not optimized. When the
    number of packets to dump falls back to 0, the original (optimized)
@@ -285,7 +296,7 @@ uint16_t rx_pkt_sw1(struct task_base *tbase, struct rte_mbuf ***mbufs)
    without any performance impact if the feature is not used. */
 uint16_t rx_pkt_dump(struct task_base *tbase, struct rte_mbuf ***mbufs)
 {
-	uint16_t ret = tbase->aux->rx_pkt_orig(tbase, mbufs);
+	uint16_t ret = call_prev_rx_pkt(tbase, mbufs);
 
 	if (ret) {
 		uint32_t n_dump = tbase->aux->task_rt_dump.n_print_rx;
@@ -322,8 +333,7 @@ uint16_t rx_pkt_dump(struct task_base *tbase, struct rte_mbuf ***mbufs)
 		tbase->aux->task_rt_dump.n_print_rx -= n_dump;
 
 		if (0 == tbase->aux->task_rt_dump.n_print_rx) {
-			tbase->rx_pkt = tbase->aux->rx_pkt_orig;
-			tbase->aux->rx_pkt_orig = NULL;
+			task_base_del_rx_pkt_function(tbase, rx_pkt_dump);
 		}
 	}
 	return ret;
@@ -331,7 +341,7 @@ uint16_t rx_pkt_dump(struct task_base *tbase, struct rte_mbuf ***mbufs)
 
 uint16_t rx_pkt_trace(struct task_base *tbase, struct rte_mbuf ***mbufs)
 {
-	uint16_t ret = tbase->aux->rx_pkt_orig(tbase, mbufs);
+	uint16_t ret = call_prev_rx_pkt(tbase, mbufs);
 
 	if (ret) {
 		uint32_t n_trace = tbase->aux->task_rt_dump.n_trace;
@@ -356,7 +366,7 @@ uint16_t rx_pkt_trace(struct task_base *tbase, struct rte_mbuf ***mbufs)
    task that receives the packet, no atomic operation is needed. */
 uint16_t rx_pkt_distr(struct task_base *tbase, struct rte_mbuf ***mbufs)
 {
-	uint16_t ret = tbase->aux->rx_pkt_orig(tbase, mbufs);
+	uint16_t ret = call_prev_rx_pkt(tbase, mbufs);
 
 	tbase->aux->rx_bucket[ret]++;
 	return ret;
@@ -364,7 +374,7 @@ uint16_t rx_pkt_distr(struct task_base *tbase, struct rte_mbuf ***mbufs)
 
 uint16_t rx_pkt_bw(struct task_base *tbase, struct rte_mbuf ***mbufs)
 {
-	uint16_t ret = tbase->aux->rx_pkt_orig(tbase, mbufs);
+	uint16_t ret = call_prev_rx_pkt(tbase, mbufs);
 	uint32_t tot_bytes = 0;
 
 	for (uint16_t i = 0; i < ret; ++i) {
@@ -379,14 +389,44 @@ uint16_t rx_pkt_bw(struct task_base *tbase, struct rte_mbuf ***mbufs)
 uint16_t rx_pkt_tsc(struct task_base *tbase, struct rte_mbuf ***mbufs)
 {
 	uint64_t before = rte_rdtsc();
-	uint16_t ret = tbase->aux->tsc_rx.rx_pkt_orig(tbase, mbufs);
+	uint16_t ret = call_prev_rx_pkt(tbase, mbufs);
+	uint64_t after = rte_rdtsc();
 
-	if (unlikely(ret == 0)) {
-		tbase->aux->tsc_rx.begin = before;
-	} else {
-		uint64_t after = rte_rdtsc();
-		tbase->aux->tsc_rx.before = before;
-		tbase->aux->tsc_rx.after = after;
-	}
+	tbase->aux->tsc_rx.before = before;
+	tbase->aux->tsc_rx.after = after;
+
 	return ret;
+}
+
+uint16_t rx_pkt_all(struct task_base *tbase, struct rte_mbuf ***mbufs)
+{
+	uint16_t tot = 0;
+	uint16_t ret = 0;
+	struct rte_mbuf **new_mbufs;
+	struct rte_mbuf **dst = tbase->aux->all_mbufs;
+
+	/* In case we receive less than MAX_PKT_BURST packets in one
+	   iteration, do no perform any copying of mbuf pointers. Use
+	   the buffer itself instead. */
+	ret = call_prev_rx_pkt(tbase, &new_mbufs);
+	if (ret < MAX_PKT_BURST/2) {
+		*mbufs = new_mbufs;
+		return ret;
+	}
+
+	memcpy(dst + tot, new_mbufs, ret * sizeof(*dst));
+	tot += ret;
+	*mbufs = dst;
+
+	do {
+		ret = call_prev_rx_pkt(tbase, &new_mbufs);
+		memcpy(dst + tot, new_mbufs, ret * sizeof(*dst));
+		tot += ret;
+	} while (ret == MAX_PKT_BURST/2 && tot < MAX_RX_PKT_ALL - MAX_PKT_BURST);
+
+	if (tot >= MAX_RX_PKT_ALL - MAX_PKT_BURST) {
+		plog_err("Could not receive all packets - buffer full\n");
+	}
+
+	return tot;
 }

@@ -53,7 +53,7 @@
 // flag_features 32 bits
 #define TASK_FEATURE_ROUTING           0x0001
 #define TASK_FEATURE_CLASSIFY          0x0002
-#define TASK_FEATURE_TWICE_RX                  0x0004
+#define TASK_FEATURE_MULTI_RX                  0x0004
 #define TASK_FEATURE_NEVER_DISCARDS            0x0008
 #define TASK_FEATURE_NO_RX                     0x0010
 #define TASK_FEATURE_TXQ_FLAGS_NOOFFLOADS      0x0020
@@ -65,6 +65,7 @@
 #define TASK_FEATURE_GRE_ID                    0x1000
 #define TASK_FEATURE_LUT_QINQ_RSS              0x2000
 #define TASK_FEATURE_LUT_QINQ_HASH             0x4000
+#define TASK_FEATURE_RX_ALL                    0x8000
 
 #define FLAG_TX_FLUSH                  0x01
 #define FLAG_NEVER_FLUSH               0x02
@@ -152,6 +153,12 @@ struct task_rt_dump {
 
 struct task_base;
 
+#define MAX_RX_PKT_ALL 16384
+
+#define MAX_STACKED_RX_FUCTIONS 16
+
+typedef uint16_t (*rx_pkt_func) (struct task_base *tbase, struct rte_mbuf ***mbufs);
+
 struct task_base_aux {
 	/* Not used when PROX_STATS is not defined */
 	struct task_rt_stats stats;
@@ -159,14 +166,17 @@ struct task_base_aux {
 
 	/* Used if TASK_TSC_RX is enabled*/
 	struct {
-		uint16_t (*rx_pkt_orig)(struct task_base *tbase, struct rte_mbuf ***mbufs);
 		uint64_t before;
 		uint64_t after;
-		uint64_t begin;
 	} tsc_rx;
 
+	struct  rte_mbuf **all_mbufs;
+
+	int      rx_prev_count;
+	int      rx_prev_idx;
+	uint16_t (*rx_pkt_prev[MAX_STACKED_RX_FUCTIONS])(struct task_base *tbase, struct rte_mbuf ***mbufs);
+
 	uint32_t rx_bucket[MAX_RING_BURST + 1];
-	uint16_t (*rx_pkt_orig)(struct task_base *tbase, struct rte_mbuf ***mbufs);
 	uint32_t tx_bucket[MAX_RING_BURST + 1];
 	void (*tx_pkt_orig)(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, uint8_t *out);
 	void (*tx_pkt_hw)(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, uint8_t *out);
@@ -205,5 +215,46 @@ struct task_base {
 	};
 } __attribute__((packed)) __rte_cache_aligned;
 
+static void task_base_add_rx_pkt_function(struct task_base *tbase, rx_pkt_func to_add)
+{
+	if (tbase->aux->rx_prev_count == MAX_STACKED_RX_FUCTIONS) {
+		return;
+	}
+
+	for (int16_t i = tbase->aux->rx_prev_count; i >= 0; --i) {
+		tbase->aux->rx_pkt_prev[i + 1] = tbase->aux->rx_pkt_prev[i];
+	}
+	tbase->aux->rx_pkt_prev[0] = tbase->rx_pkt;
+	tbase->rx_pkt = to_add;
+	tbase->aux->rx_prev_count++;
+}
+
+static void task_base_del_rx_pkt_function(struct task_base *tbase, rx_pkt_func to_del)
+{
+	int cur = 0;
+	int found = 0;
+
+	if (tbase->aux->rx_prev_count == 1) {
+		tbase->rx_pkt = tbase->aux->rx_pkt_prev[0];
+		found = 1;
+	} else {
+		for (int16_t i = 0; i < tbase->aux->rx_prev_count; ++i) {
+			if (found || tbase->aux->rx_pkt_prev[i] != to_del)
+				tbase->aux->rx_pkt_prev[cur++] = tbase->aux->rx_pkt_prev[i];
+			else
+				found = 1;
+		}
+	}
+	if (found)
+		tbase->aux->rx_prev_count--;
+}
+
+static rx_pkt_func task_base_get_original_rx_pkt_function(struct task_base *tbase)
+{
+	if (tbase->aux->rx_prev_count == 0)
+		return tbase->rx_pkt;
+	else
+		return tbase->aux->rx_pkt_prev[tbase->aux->rx_prev_count - 1];
+}
 
 #endif /* _TASK_BASE_H_ */

@@ -56,6 +56,9 @@ class ResultEntry:
     def getCores(self):
         return self.cores
 
+    def getMsr(self):
+        return self.msr;
+
 class DictEntry:
     def __init__(self, key):
         self.dictionary = {}
@@ -138,9 +141,9 @@ for a in orderedResults:
     outputFile.write(["connections = " + str(a.key)])
     outputFile.write(title)
 
-
     for e in a.entries:
-        line = [str(e.getBoundary())]
+        line = [str(e.getMsr())]
+        line += [str(e.getBoundary())]
         for c in sorted(cores):
             if (e.getCoreResult(c) is not None):
                 line += [str(e.getCoreResult(c))]

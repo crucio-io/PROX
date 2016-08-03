@@ -99,23 +99,18 @@ else
 CFLAGS += -DPROX_MAX_LOG_LVL=$(log)
 endif
 
-ifeq ($(crc),hard)
-CFLAGS += -DHARD_CRC
-endif
-
+# override any use-case/enviroment specific choices regarding crc and
+# always use the sw implementation
 ifeq ($(crc),soft)
 CFLAGS += -DSOFT_CRC
-endif
-
-ifeq ($(crc),none)
-else
-CFLAGS += -DHARD_CRC
 endif
 
 CFLAGS += -DPROX_PREFETCH_OFFSET=2
 #CFLAGS += -DBRAS_RX_BULK
 #CFLAGS += -DASSERT
 #CFLAGS += -DENABLE_EXTRA_USER_STATISTICS
+CFLAGS += -DLATENCY_PER_PACKET
+CFLAGS += -DLATENCY_DETAILS
 CFLAGS += -DGRE_TP
 CFLAGS += -std=gnu99
 CFLAGS += -D_GNU_SOURCE                # for PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP
@@ -132,7 +127,6 @@ SRCS-y += handle_nop.c
 SRCS-y += handle_irq.c
 SRCS-y += handle_arp.c
 SRCS-y += handle_impair.c
-SRCS-y += handle_drop.c
 SRCS-y += handle_lat.c
 SRCS-y += handle_qos.c
 SRCS-y += handle_qinq_decap4.c

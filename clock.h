@@ -45,6 +45,7 @@ uint64_t sec_to_tsc(uint64_t sec);
 uint64_t msec_to_tsc(uint64_t msec);
 uint64_t usec_to_tsc(uint64_t usec);
 uint64_t nsec_to_tsc(uint64_t nsec);
+uint64_t freq_to_tsc(uint64_t times_per_sec);
 
 struct timeval;
 void tsc_to_tv(struct timeval *tv, const uint64_t tsc);

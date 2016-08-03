@@ -62,7 +62,6 @@ struct lcore_cfg;
 #define	TASK_ARG_DO_NOT_SET_SRC_MAC 0x200
 #define	TASK_ARG_DO_NOT_SET_DST_MAC 0x400
 
-
 enum protocols {IPV4, ARP, IPV6};
 
 struct qos_cfg {
@@ -96,6 +95,11 @@ struct task_init {
 	uint32_t mbuf_size;
 	LIST_ENTRY(task_init) entries;
 };
+
+static int task_init_flag_set(struct task_init *task_init, uint32_t flag)
+{
+	return !!(task_init->flag_features & flag);
+}
 
 enum police_action {
         ACT_GREEN = e_RTE_METER_GREEN,
@@ -224,6 +228,7 @@ struct task_args {
    task itself does not send directly to a port, the function will
    search reachable tasks through each outgoing ring */
 struct task_args *find_reachable_task_sending_to_port(struct task_args *from);
+struct prox_port_cfg *find_reachable_port(struct task_args *from);
 
 struct task_base *init_task_struct(struct task_args *targ);
 struct task_init *to_task_init(const char *mode_str, const char *sub_mode_str);

@@ -92,7 +92,8 @@ const char *get_parse_err(void)
 }
 
 static int read_cpu_topology(void);
-static int parse_core(int *socket, uint32_t *val, int *ht, const char* str, char** end);
+
+static int parse_core(int *socket, int *core, int *ht, const char* str);
 
 static void set_errf(const char *format, ...)
 {
@@ -253,7 +254,6 @@ int parse_range(uint32_t* lo, uint32_t* hi, const char *str2)
 		return -1;
 	if (parse_int(hi, dash + 1))
 		return -1;
-
 
 	int64_t tmp = strtol(str, 0, 0);
 	if (tmp > UINT32_MAX) {
@@ -455,7 +455,6 @@ int parse_mac(struct ether_addr *ether_addr, const char *str2)
 	return 0;
 }
 
-
 char* get_cfg_key(char *str)
 {
 	char *pkey = strchr(str, '=');
@@ -619,12 +618,22 @@ static int get_lcore_id(uint32_t socket_id, uint32_t core_id, int ht)
 	return cpu_topo.socket[socket_id][core_id][!!ht];
 }
 
-/* Returns core ID on success, negative on error. */
-static int parse_core(int *socket, uint32_t *val, int *ht, const char* str, char** end)
+/* Returns 0 on success, negative on error. Parses the syntax XsYh
+   where sYh is optional. If sY is specified, Y is stored in the
+   socket argument. If, in addition, h is specified, *ht is set to
+   1. In case the input is only a number, socket and ht are set to
+   -1.*/
+static int parse_core(int *socket, int *core, int *ht, const char* str)
 {
-	int ret = strtol(str, end, 10);
+	*socket = -1;
+	*core = -1;
+	*ht -1;
 
-	if (**end == 's') {
+	char* end;
+
+	*core = strtol(str, &end, 10);
+
+	if (*end == 's') {
 		*socket = 0;
 		*ht = 0;
 
@@ -634,30 +643,27 @@ static int parse_core(int *socket, uint32_t *val, int *ht, const char* str, char
 			}
 		}
 
-		++*end;
-		*socket = strtol(*end, end, 10);
+		++end;
+		*socket = strtol(end, &end, 10);
 		if (*socket >= MAX_SOCKETS) {
 			set_errf("Socket id %d too high (max allowed is %d)", *socket, MAX_SOCKETS - 1);
 			return -1;
 		}
 
-		if (**end == 'h') {
-			++*end;
+		if (*end == 'h') {
+			++end;
 			*ht = 1;
 		}
 
-		*val = ret;
-		return get_lcore_id(*socket, ret, *ht);
+		return 0;
 	}
-	*socket = -1;
-	*ht = -1;
 
-	if (**end == 'h') {
+	if (*end == 'h') {
 		set_errf("Can't find hyper-thread since socket has not been specified");
 		return -1;
 	}
 
-	return ret;
+	return 0;
 }
 
 static int parse_task(const char *str, uint32_t *socket, uint32_t *core, uint32_t *task, uint32_t *ht, enum ctrl_type *type)
@@ -843,78 +849,69 @@ int parse_task_set(struct core_task_set *cts, const char *str2)
 int parse_list_set(uint32_t *list, const char *str2, uint32_t max_list)
 {
 	char str[MAX_STR_LEN_PROC];
+	char *parts[MAX_STR_LEN_PROC];
 
 	if (parse_vars(str, sizeof(str), str2))
 		return -1;
 
-	char *str3 = str;
-	unsigned int i, j = 0;
-	while (*str3) {
-		uint32_t val = 0;
-		int ret;
-		int socket, ht;
+	int n_parts = rte_strsplit(str, strlen(str), parts, MAX_STR_LEN_PROC, ',');
+	size_t list_count = 0;
 
-		if ((ret = parse_core(&socket, &val, &ht, str3, &str3)) < 0) {
+	for (int i = 0; i < n_parts; ++i) {
+		char *cur_part = parts[i];
+		char *sub_parts[3];
+		int n_sub_parts = rte_strsplit(cur_part, strlen(cur_part), sub_parts, 3, '-');
+		int socket1, socket2;
+		int ht1, ht2;
+		int core1, core2;
+		int ret = 0;
+
+		if (n_sub_parts == 1) {
+			if (parse_core(&socket1, &core1, &ht1, sub_parts[0]))
+				return -1;
+
+			socket2 = socket1;
+			core2 = core1;
+			ht2 = ht1;
+		} else if (n_sub_parts == 2) {
+			if (parse_core(&socket1, &core1, &ht1, sub_parts[0]))
+				return -1;
+			if (parse_core(&socket2, &core2, &ht2, sub_parts[1]))
+				return -1;
+		} else if (n_sub_parts >= 3) {
+			set_errf("Multiple '-' characters in range syntax found");
+			return -1;
+		} else {
+			set_errf("Invalid list syntax");
 			return -1;
 		}
 
-		list[j++] = ret;
-		if (*str3 == '-') {
-			*str3++ = '\0';
-			uint32_t val2 = 0;
-			int socket2, ht2;
-
-			if (socket == -1 || ht == -1) {
-				val = ret;
-			}
-			if ((ret = parse_core(&socket2, &val2, &ht2, str3, &str3)) < 0) {
-				return -1;
-			}
-
-			if (socket != socket2) {
-				set_errf("Same socket must be used in range syntax");
-				return -1;
-			}
-			else if (ht != ht2) {
-				set_errf("If 'h' syntax is in range, it must be specified everywhere.");
-				return -1;
-			}
-
-			if (socket2 == -1 || ht2 == -1) {
-				val2 = ret;
-			}
-
-			if (val2 >= val) {
-				for (i = val + 1; i <= val2; ++i) {
-					if (j == max_list) {
-						set_errf("Too many elements in range (%u > %u)", val2, max_list);
-						return -1;
-					}
-					if (socket == -1 || ht == -1)
-						list[j++] = i;
-					else {
-						ret = get_lcore_id(socket, i, ht);
-						if (ret < 0) {
-							return -1;
-						}
-
-						list[j++] = ret;
-					}
-				}
-			}
-			else {
-				set_errf("Too little elements in range (%u < %u)", val, val2);
-				return -1;
-			}
+		if (socket1 != socket2) {
+			set_errf("Same socket must be used in range syntax");
+			return -1;
 		}
-		if (*str3 == ',') {
-			++str3;
+		else if (ht1 != ht2) {
+			set_errf("If 'h' syntax is in range, it must be specified everywhere.");
+			return -1;
 		}
-		else {
-			break;
+
+		for (int cur_core = core1; cur_core <= core2; ++cur_core) {
+			int effective_core;
+
+			if (socket1 != -1)
+				effective_core = get_lcore_id(socket1, cur_core, ht1);
+			else
+				effective_core = cur_core;
+
+			if (list_count >= max_list) {
+				set_errf("Too many elements in list\n");
+				return -1;
+			}
+			list[list_count++] = effective_core;
 		}
 	}
-	return j;
+
+	return list_count;
 }
 
 int parse_kmg(uint32_t* val, const char *str2)

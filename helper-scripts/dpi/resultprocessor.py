@@ -101,13 +101,13 @@ class ResultProcessor:
             if (rx_converged == -1):
                 if (timeStamp > converged):
                     rx_converged = entry[0]
-                    tx_converged = entry[1]
+                    tx_converged = entry[1] - entry[2]
                 else:
                     continue;
             else:
                 if (timeStamp > end):
                     rx_end = entry[0]
-                    tx_end = entry[1]
+                    tx_end = entry[1] - entry[2]
                     break;
         return (tx_end - tx_converged)/Decimal(rx_end - rx_converged)
 

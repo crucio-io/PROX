@@ -519,7 +519,6 @@ static int lua_to_host_set(struct lua_State *L, enum lua_place from, const char 
 
 	uint32_t port = 0, port_mask = 0;
 
-
 	if (lua_to_ip(L, TABLE, "ip", &h->ip) || lua_to_int(L, TABLE, "port", &port))
 		return -1;
 
@@ -986,7 +985,6 @@ static void init_task_gen_client(struct task_base *tbase, struct task_args *targ
 	lua_pop(prox_lua(), 1);
 	PROX_PANIC(n_bundle_cfgs == 0, "No configs specified\n");
 	plogx_info("loading %d bundle_cfgs\n", n_bundle_cfgs);
-
 
 	struct hash_set *hs = prox_sh_find_socket(socket, "genl4_streams");
 	if (hs == NULL) {

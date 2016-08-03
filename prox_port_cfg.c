@@ -142,7 +142,6 @@ void init_rte_dev(int use_dummy_devices)
 		plog_info("\tDPDK has found %u ports\n", nb_ports);
 	}
 
-
 	if (nb_ports > PROX_MAX_PORTS) {
 		plog_warn("\tWarning: I can deal with at most %u ports."
 		        " Please update PROX_MAX_PORTS and recompile.\n", PROX_MAX_PORTS);
@@ -189,6 +188,10 @@ void init_rte_dev(int use_dummy_devices)
 				plog_warn("System did not report numa_node for device %s\n", port_cfg->pci_addr);
 			}
 			fclose(numa_node_fd);
+		}
+
+		if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_IPV4_CKSUM) {
+			port_cfg->capabilities.tx_offload_ipv4_cksum = 1;
 		}
 	}
 }
@@ -291,7 +294,6 @@ static void init_port(struct prox_port_cfg *port_cfg)
 
 	PROX_PANIC(port_cfg->n_rxq > port_cfg->max_rxq, "\t\t\tToo many RX queues (configuring %u, max is %u)\n", port_cfg->n_rxq, port_cfg->max_rxq);
 	PROX_PANIC(port_cfg->n_txq > port_cfg->max_txq, "\t\t\tToo many TX queues (configuring %u, max is %u)\n", port_cfg->n_txq, port_cfg->max_txq);
-
 
 	if (!strcmp(port_cfg->driver_name, "rte_ixgbevf_pmd") ||
 	    !strcmp(port_cfg->driver_name, "rte_virtio_pmd") ||

@@ -75,7 +75,6 @@ struct core_net_pkt_m {
 	struct udp_hdr udp_hdr;
 } __attribute__((packed));
 
-
 struct core_net_pkt {
 	struct ether_hdr ether_hdr;
 	struct ipv4_hdr tunnel_ip_hdr;
@@ -91,7 +90,6 @@ struct cpe_pkt_delta {
 	uint8_t encap[DOWNSTREAM_DELTA];
 	struct cpe_pkt pkt;
 } __attribute__((packed));
-
 
 static inline void extract_key_cpe(struct rte_mbuf *mbuf, uint64_t* key)
 {

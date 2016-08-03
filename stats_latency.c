@@ -58,7 +58,6 @@ void lat_stats_reset(void)
         }
 }
 
-
 int stats_get_n_latency(void)
 {
 	return slm->n_latency;
@@ -108,31 +107,34 @@ static struct stats_latency_manager *alloc_stats_latency_manager(void)
 	return ret;
 }
 
+static void stats_latency_add_task(struct lcore_cfg *lconf, struct task_args *targ)
+{
+	if (targ->nb_rxports == 1) {
+		sprintf(slm->task_lats[slm->n_latency].rx_name, "%d", targ->rx_ports[0]);
+	} else if (targ->nb_rxrings == 1) {
+		if (targ->rx_rings[0])
+			strncpy(slm->task_lats[slm->n_latency].rx_name, targ->rx_rings[0]->name, 2);
+	}
+
+	slm->task_lats[slm->n_latency].task = (struct task_lat *)targ->tbase;
+	slm->task_lats[slm->n_latency].lcore_id = lconf->id;
+	slm->task_lats[slm->n_latency].task_id = targ->id;
+	slm->lat_stats[slm->n_latency].tot_min_lat = -1;
+	slm->n_latency++;
+}
+
 void stats_latency_init(void)
 {
-	struct lcore_cfg *lconf;
+	struct lcore_cfg *lconf = NULL;
+	struct task_args *targ;
 	uint32_t lcore_id = -1;
 
 	slm = alloc_stats_latency_manager();
 	slm->tsc_hz = rte_get_tsc_hz();
-	while (prox_core_next(&lcore_id, 0) == 0) {
-		lconf = &lcore_cfg[lcore_id];
-		for (uint8_t task_id = 0; task_id < lconf->n_tasks_all; ++task_id) {
-			struct task_args *targ = &lconf->targs[task_id];
-			if (task_runs_observable_latency(targ)) {
-				if (targ->nb_rxports == 1) {
-					sprintf(slm->task_lats[slm->n_latency].rx_name, "%d", targ->rx_ports[0]);
-				} else if (targ->nb_rxrings == 1) {
-					if (targ->rx_rings[0])
-						strncpy(slm->task_lats[slm->n_latency].rx_name, targ->rx_rings[0]->name, 2);
-				}
-				slm->task_lats[slm->n_latency].task = (struct task_lat *)lconf->tasks_all[task_id];
-				slm->task_lats[slm->n_latency].lcore_id = lcore_id;
-				slm->task_lats[slm->n_latency].task_id = task_id;
-				slm->lat_stats[slm->n_latency].tot_min_lat = -1;
-				slm->n_latency++;
-			}
-		}
+
+	while (core_targ_next(&lconf, &targ, 0) == 0) {
+		if (task_runs_observable_latency(targ))
+			stats_latency_add_task(lconf, targ);
 	}
 }
 
@@ -250,7 +252,7 @@ uint64_t stats_core_task_lat_avg(uint8_t lcore_id, uint8_t task_id)
 	return 0;
 }
 
-#ifndef NO_LATENCY_PER_PACKET
+#ifdef LATENCY_PER_PACKET
 void stats_core_lat(uint8_t lcore_id, uint8_t task_id, unsigned *n_pkts, uint64_t *lat)
 {
 	*n_pkts = 0;
@@ -281,6 +283,22 @@ void stats_core_lat(uint8_t lcore_id, uint8_t task_id, unsigned *n_pkts, uint64_
 }
 #endif
 
+void stats_core_lat_histogram(uint8_t lcore_id, uint8_t task_id, uint64_t **buckets)
+{
+	*buckets = NULL;
+
+	for (uint16_t i = 0; i < stats_get_n_latency(); ++i) {
+		struct task_lat_stats* s = &slm->task_lats[i];
+
+		if (s->lcore_id == lcore_id && s->task_id == task_id) {
+			struct lat_test *lat_test = &slm->lat_stats[i].lat_test;
+
+			*buckets = lat_test->buckets;
+			return;
+		}
+	}
+}
+
 void stats_latency_update(void)
 {
 	for (uint16_t i = 0; i < slm->n_latency; ++i) {
@@ -310,7 +328,7 @@ void stats_latency_update(void)
 		lat_test->tot_lat = 0;
 		lat_test->var_lat = 0;
 		lat_test->tot_pkts = 0;
-#ifndef NO_LATENCY_PER_PACKET
+#ifdef LATENCY_PER_PACKET
 		lat_test->cur_pkt = 0;
 #endif
 		lat_test->max_lat = 0;

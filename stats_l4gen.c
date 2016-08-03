@@ -120,7 +120,6 @@ void stats_l4gen_update(void)
 		sl4m->task_l4_stats[i].sample[last_stat].stats = task_l4gen->l4_stats;
 		after = rte_rdtsc();
 
-
 		sl4m->task_l4_stats[i].sample[last_stat].tsc = (before >> 1) + (after >> 1);
 	}
 }

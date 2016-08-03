@@ -88,7 +88,6 @@ __attribute__((format(printf, 1, 2))) static void set_err(const char *fmt, ...)
 	va_end(ap);
 }
 
-
 __attribute__((format(printf, 1, 2))) static void concat_err(const char *fmt, ...)
 {
 	va_list ap;
@@ -660,7 +659,6 @@ int lua_to_routes6(struct lua_State *L, enum lua_place from, const char *name, u
 		return -1;
 	}
 
-
 	lua_len(L, -1);
 	n_tot_rules = lua_tointeger(L, -1);
 	n_loaded_rules = 0;
@@ -863,7 +861,6 @@ int lua_to_ip6_tun_binding(struct lua_State *L, enum lua_place from, const char 
 		set_err("Can't read IPv6 tunnel bindings entry since ret is not a table\n");
 		return -1;
 	}
-
 
 	lua_len(L, -1);
 	n_entries = lua_tointeger(L, -1);

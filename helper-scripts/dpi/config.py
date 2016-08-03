@@ -45,7 +45,7 @@ class Config:
     _once = None
     _skipTime = 10
     _testLength = 120
-    _maxDpiCoreCount = 4
+    _dpiCoreList = range(1, 5)
     _checkConditions = False;
     _interCheckDuration = float(1)
 
@@ -168,6 +168,23 @@ class Config:
             elif(option == '-l'):
                 self._testLength = int(arg)
             elif(option == '-n'):
-                self._maxDpiCoreCount = int(arg)
+                self._dpiCoreList = self.strToList(arg)
             else:
                 self.usageAndExit(programName);
+
+    def strToList(self, arg):
+        elements = [];
+        tokens = arg.split(",");
+
+        for a in tokens:
+            if (a.count('-') == 0):
+                elements.append(int(a))
+            elif (a.count('-') == 1):
+                beg = int(a.split('-')[0]);
+                end = int(a.split('-')[1]);
+                if (beg > end):
+                    raise Exception("Invalid list input format")
+                elements += range(beg, end + 1);
+            else:
+                raise Exception("Invalid list input format")
+        return elements;

@@ -73,6 +73,7 @@ struct task_gre_decap {
 	uint8_t runtime_flags;
 	uint8_t mapping[PROX_MAX_PORTS];
 	uint32_t bucket_index;
+	int     offload_crc;
 	const void* key_ptr[16];
 	struct cpe_gre_key key[16];
 	uint64_t           cpe_timeout;
@@ -124,7 +125,7 @@ static void init_cpe_gre_hash(struct task_args *targ)
 	};
 
 	struct rte_hash* phash = rte_hash_create(&hash_params);
-	struct cpe_gre_data *cpe_gre_data = rte_zmalloc(NULL, MAX_GRE / table_part, socket_id);
+	struct cpe_gre_data *cpe_gre_data = prox_zmalloc(MAX_GRE / table_part, socket_id);
 
 	PROX_PANIC(phash == NULL, "Unable to allocate memory for IPv4 hash table on core %u\n", lcore_id);
 
@@ -166,6 +167,11 @@ static void init_task_gre_encap(struct task_base *tbase, struct task_args *targ)
 	task->cpe_gre_data = targ->cpe_gre_data;
 	task->runtime_flags = targ->runtime_flags;
 	task->lconf = targ->lconf;
+
+	struct port_cfg *port = find_reachable_task_sending_to_port(targ);
+	if (port) {
+		task->offload_crc = port->capabilities.tx_offload_ipv4_cksum;
+	}
 
 #ifdef GRE_TP
 	if (targ->tb_rate) {
@@ -311,7 +317,7 @@ static inline uint8_t handle_gre_decap(struct task_gre_decap *task, struct rte_m
 	}
 	rte_memcpy(&task->cpe_gre_data[hash_index], &data, sizeof(data));
 	if (task->runtime_flags & TASK_TX_CRC) {
-		prox_ip_cksum(mbuf, pip, sizeof(struct ether_hdr), sizeof(struct ipv4_hdr));
+		prox_ip_cksum(mbuf, pip, sizeof(struct ether_hdr), sizeof(struct ipv4_hdr), task->offload_crc);
 	}
 
 	return 0;
@@ -366,6 +372,12 @@ static inline void handle_gre_encap16(struct task_gre_decap *task, struct rte_mb
 	}
 }
 
+#ifdef DO_ENC_ETH_OVER_GRE
+#define PKT_PREPEND_LEN (sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr) + sizeof(struct gre_hdr))
+#elif DO_ENC_IP_OVER_GRE
+#define PKT_PREPEND_LEN (sizeof(struct ipv4_hdr) + sizeof(struct gre_hdr))
+#else
+
 static inline uint8_t handle_gre_encap(struct task_gre_decap *task, struct rte_mbuf *mbuf, struct cpe_gre_data *table)
 {
 	struct ether_hdr *peth = rte_pktmbuf_mtod(mbuf, struct ether_hdr *);
@@ -374,7 +386,6 @@ static inline uint8_t handle_gre_encap(struct task_gre_decap *task, struct rte_m
 
 	struct cpe_gre_key key;
 	ether_addr_copy(&peth->d_addr, &key.clt_mac);
-
 
 #ifdef GRE_TP
 	/* policing enabled */
@@ -400,23 +411,11 @@ static inline uint8_t handle_gre_encap(struct task_gre_decap *task, struct rte_m
 	}
 #endif /* GRE_TP */
 
-#if DO_ENC_ETH_OVER_GRE
-	peth = (struct ether_hdr *)rte_pktmbuf_prepend(mbuf,
-						       sizeof(struct ether_hdr) +
-						       sizeof(struct ipv4_hdr) +
-						       sizeof(struct gre_hdr));
+	/* reuse ethernet header from payload, retain payload (ip) in
+	   case of DO_ENC_IP_OVER_GRE */
+	peth = (struct ether_hdr *)rte_pktmbuf_prepend(mbuf, PKT_PREPEND_LEN);
 	PREFETCH0(peth);
-	ip_len +=
-	    (sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr) +
-	     sizeof(struct gre_hdr));
-#elif DO_ENC_IP_OVER_GRE
-	/* reuse ethernet header from payload, retain payload (ip) */
-	peth = (struct ether_hdr *)rte_pktmbuf_prepend(mbuf,
-						       sizeof(struct ipv4_hdr) +
-						       sizeof(struct gre_hdr));
-	PREFETCH0(peth);
-	ip_len += (sizeof(struct ipv4_hdr) + sizeof(struct gre_hdr));
-#endif
+	ip_len += PKT_PREPEND_LEN;
 
 	pip = (struct ipv4_hdr *)(peth + 1);
 	struct gre_hdr *pgre = (struct gre_hdr *)(pip + 1);
@@ -442,7 +441,7 @@ static inline uint8_t handle_gre_encap(struct task_gre_decap *task, struct rte_m
 	pip->total_length = rte_cpu_to_be_16(ip_len);
 
 	if (task->runtime_flags & TASK_TX_CRC) {
-		prox_ip_cksum(mbuf, pip, sizeof(struct ether_hdr), sizeof(struct ipv4_hdr));
+		prox_ip_cksum(mbuf, pip, sizeof(struct ether_hdr), sizeof(struct ipv4_hdr), task->offload_crc);
 	}
 
 	return 0;

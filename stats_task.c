@@ -159,10 +159,10 @@ void stats_task_get_host_rx_tx_packets(uint64_t *rx, uint64_t *tx, uint64_t *tsc
 		t = task_stats_set[task_id];
 
 		if (t->flags & TASK_STATS_RX)
-			*rx += t->sample[last_stat].rx_pkt_count;
+			*rx += t->tot_rx_pkt_count;
 
 		if (t->flags & TASK_STATS_TX)
-			*tx += t->sample[last_stat].tx_pkt_count;
+			*tx += t->tot_tx_pkt_count;
 	}
 	if (nb_tasks_tot)
 		*tsc = task_stats_set[nb_tasks_tot - 1]->sample[last_stat].tsc;

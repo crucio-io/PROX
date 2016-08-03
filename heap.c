@@ -481,7 +481,6 @@ void heap_del(struct heap *h, struct heap_ref *d)
 			del->next->prev = del->prev;
 	}
 
-
 	struct heap_elem *top2 = del->child;
 
 	/* If the node to be deleted has children, there is more work:

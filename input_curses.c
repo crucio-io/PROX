@@ -188,9 +188,10 @@ static void proc_keyboard(struct input *input)
 	line = el_gets(el, &len);
 	li = el_line(el);
 
-	if ((len == 0) || (line == NULL))
-		return; /* should quit*/
-	else if (len > 0) {
+	if (len == 0 || line == NULL) {
+		display_cmd("", 0, 0);
+		return;
+	} else if (len > 0) {
 		if (len == 1 && line[0] == '\n') {
 			display_print_page();
 			el_set(el, EL_UNBUFFERED, 0);
@@ -281,7 +282,6 @@ static void setup_el(void)
 
 	el_set(el, EL_ADDFN, "key_page_up", "Page up", key_page_up);
 	el_set(el, EL_ADDFN, "key_page_down", "Page down", key_page_down);
-
 
 	el_set(el, EL_BIND, "^I", "complete", NULL);
 	el_set(el, EL_BIND, "^r", "em-inc-search-prev", NULL);

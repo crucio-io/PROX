@@ -46,6 +46,7 @@ struct task_qinq_encap4 {
         struct rte_table_hash  *cpe_table;
 	uint16_t         qinq_tag;
 	uint64_t         src_mac[PROX_MAX_PORTS];
+	int              offload_crc;
         uint8_t          runtime_flags;
         uint8_t          *dscp;
         uint64_t         keys[64];

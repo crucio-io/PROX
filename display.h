@@ -59,5 +59,4 @@ static struct stats_cons display = {
 	.flags   = STATS_CONS_F_ALL,
 };
 
-
 #endif /* _DISPLAY_H_ */

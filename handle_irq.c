@@ -31,11 +31,36 @@
 
 #include <rte_cycles.h>
 
+#include "lconf.h"
 #include "task_base.h"
 #include "task_init.h"
 #include "handle_irq.h"
 #include "log.h"
 #include "unistd.h"
+#include "input.h"
+
+#define MAX_INDEX	65535
+
+struct irq_info {
+	uint64_t tsc;
+	uint64_t lat;
+};
+
+struct irq_bucket {
+	uint64_t index;
+	struct irq_info info[MAX_INDEX];
+};
+
+struct task_irq {
+	struct task_base base;
+	uint64_t start_tsc;
+	uint64_t tsc;
+	uint64_t max_irq;
+	uint8_t  lcore_id;
+	volatile uint16_t stats_use_lt; /* which lt to use, */
+	volatile uint16_t task_use_lt; /* 0 or 1 depending on which of the 2 result records are used */
+	struct irq_bucket buffer[2];
+};
 
 #define MAX_PACKETS	128
 
@@ -47,6 +72,42 @@
  *		as been properly configured.
 */
 
+void task_irq_show_stats(struct task_irq *task_irq, struct input *input)
+{
+	struct irq_bucket *bucket = &task_irq->buffer[!task_irq->task_use_lt];
+	if (input->reply) {
+		char buf[8192] = {0};
+		if (bucket->index == 0) {
+			sprintf(buf, "\n");
+			input->reply(input, buf, strlen(buf));
+			buf[0] = 0;
+		}
+		for (uint64_t i = 0; i < bucket->index; i++) {
+			sprintf(buf + strlen(buf), "%d; %"PRIu64"""; %ld; %ld; %ld; %ld ;",
+				task_irq->lcore_id,
+				i,
+				bucket->info[i].lat,
+				bucket->info[i].lat * 1000000 / rte_get_tsc_hz(),
+				bucket->info[i].tsc - task_irq->start_tsc,
+				(bucket->info[i].tsc - task_irq->start_tsc) * 1000 / rte_get_tsc_hz());
+			sprintf(buf+strlen(buf), "\n");
+			input->reply(input, buf, strlen(buf));
+			buf[0] = 0;
+		}
+	} else {
+		for (uint64_t i = 0; i < bucket->index; i++)
+			if (bucket->info[i].lat)
+				plog_info("[%d]; Interrupt %"PRIu64": %ld cycles (%ld micro-sec) at %ld cycles (%ld msec)\n",
+					  task_irq->lcore_id,
+					  i,
+					  bucket->info[i].lat,
+					  bucket->info[i].lat * 1000000 / rte_get_tsc_hz(),
+					  bucket->info[i].tsc - task_irq->start_tsc,
+					  (bucket->info[i].tsc - task_irq->start_tsc) * 1000 / rte_get_tsc_hz());
+	}
+	task_irq->stats_use_lt = !task_irq->task_use_lt;
+	bucket->index = 0;
+}
 
 static void irq_stop(struct task_base *tbase)
 {
@@ -65,7 +126,13 @@ static void irq_stop(struct task_base *tbase)
 		struct irq_bucket *bucket = &task->buffer[bucket_id];
 		for (i=0; i< bucket->index;i++) {
 			if (bucket->info[i].lat != 0) {
-				plog_info("[%d]; Interrupt %d: %ld cycles (%ld micro-sec) at %ld cycles (%ld msec)\n", lcore_id, i, bucket->info[i].lat, (bucket->info[i].lat * 1000000) / rte_get_tsc_hz(), (bucket->info[i].tsc - task->start_tsc), ((bucket->info[i].tsc - task->start_tsc) * 1000) / rte_get_tsc_hz());
+				plog_info("[%d]; Interrupt %d: %ld cycles (%ld micro-sec) at %ld cycles (%ld msec)\n",
+					  lcore_id,
+					  i,
+					  bucket->info[i].lat,
+					  bucket->info[i].lat * 1000000 / rte_get_tsc_hz(),
+					  bucket->info[i].tsc - task->start_tsc,
+					  (bucket->info[i].tsc - task->start_tsc) * 1000 / rte_get_tsc_hz());
 			}
 		}
 	}
@@ -97,6 +164,7 @@ static void init_task_irq(struct task_base *tbase,
 	// max_irq expressed in 64 bytes packets
 	task->max_irq = ((MAX_PACKETS * rte_get_tsc_hz()) / 14880961);
 	task->start_tsc = rte_rdtsc();
+	task->lcore_id = targ->lconf->id;
 	plog_info("\tusing irq mode with max irq set to %ld cycles\n", task->max_irq);
 }
 

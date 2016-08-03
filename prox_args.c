@@ -139,7 +139,6 @@ static struct cfg_section core_cfg = {
 	.error  = 0
 };
 
-
 static void set_errf(const char *format, ...)
 {
 	va_list ap;
@@ -217,11 +216,9 @@ static int get_rte_cfg(__attribute__((unused))unsigned sindex, char *str, void *
 		return 0;
 	}
 
-
 	set_errf("Option '%s' is not known", str);
 	return -1;
 }
-
 
 struct cfg_depr global_cfg_depr[] = {
 	{"virtualization", "This is now set automatically if needed"},
@@ -448,7 +445,6 @@ static int get_port_cfg(unsigned sindex, char *str, void *data)
 		return -1;
 	}
 
-
 	if (STR_EQ(str, "mac")) {
 		if (STR_EQ(pkey, "hardware")) {
 			cfg->type = PROX_PORT_MAC_HW;
@@ -632,7 +628,6 @@ static int get_core_cfg(unsigned sindex, char *str, void *data)
 		if (parse_port_name_list(vals, &ret, PROX_MAX_PORTS, pkey)) {
 			return -1;
 		}
-
 
 		if (n_remap != -1 && ret != (uint32_t)n_remap) {
 			set_errf("Expected %d remap elements but had %d", n_remap, ret);
@@ -1093,14 +1088,7 @@ static int get_core_cfg(unsigned sindex, char *str, void *data)
 		return 0;
 	}
 	if (STR_EQ(str, "tx crc")) {
-                uint32_t val;
-                if (parse_bool(&val, pkey)) {
-                        return -1;
-                }
-		if (val)
-			targ->runtime_flags |= TASK_TX_CRC;
-		else
-			targ->runtime_flags &= ~TASK_TX_CRC;
+		return parse_flag(&targ->runtime_flags, TASK_TX_CRC, pkey);
 	}
 	if (STR_EQ(str, "ring size")) {
 		return parse_int(&targ->ring_size, pkey);
@@ -1586,46 +1574,50 @@ static int calc_tot_rxrings(void)
 {
 	struct lcore_cfg *slconf, *dlconf;
 	struct task_args *starg, *dtarg;
-	uint32_t slcore_id, dlcore_id;
+	uint32_t dlcore_id;
 	uint8_t dtask_id;
 	struct core_task ct;
 
-	slcore_id = -1;
-	while(prox_core_next(&slcore_id, 1) == 0) {
-		slconf = &lcore_cfg_init[slcore_id];
-		for (uint8_t task_id = 0; task_id < slconf->n_tasks_all; ++task_id) {
-			starg = &slconf->targs[task_id];
-			for (uint8_t idx = 0; idx < MAX_PROTOCOLS; ++idx) {
-				for (uint8_t ring_idx = 0; ring_idx < starg->core_task_set[idx].n_elems; ++ring_idx) {
-					ct = starg->core_task_set[idx].core_task[ring_idx];
-					if(!prox_core_active(ct.core, 0)) {
-						set_errf("Core %u is disabled but Core %u task %u is sending to it\n", ct.core, slcore_id, task_id);
-						return -1;
-					}
+	dlconf = NULL;
+	while (core_targ_next_early(&dlconf, &dtarg, 1) == 0) {
+		dtarg->tot_rxrings = 0;
+	}
 
-					dlconf = &lcore_cfg_init[ct.core];
+	slconf = NULL;
+	while (core_targ_next_early(&slconf, &starg, 1) == 0) {
+		for (uint8_t idx = 0; idx < MAX_PROTOCOLS; ++idx) {
+			for (uint8_t ring_idx = 0; ring_idx < starg->core_task_set[idx].n_elems; ++ring_idx) {
+				ct = starg->core_task_set[idx].core_task[ring_idx];
+				if (!prox_core_active(ct.core, 0)) {
+					set_errf("Core %u is disabled but Core %u task %u is sending to it\n",
+						 ct.core, slconf->id, starg->id);
+					return -1;
+				}
 
-					if (ct.task >= dlconf->n_tasks_all) {
-						set_errf("Core %u task %u not enabled\n", ct.core, ct.task);
-						return -1;
-					}
+				dlconf = &lcore_cfg_init[ct.core];
 
-					dtarg = &dlconf->targs[ct.task];
+				if (ct.task >= dlconf->n_tasks_all) {
+					set_errf("Core %u task %u not enabled\n", ct.core, ct.task);
+					return -1;
+				}
 
-					/* Control rings are not relevant at this point. */
-					if (ct.type)
-						continue;
+				dtarg = &dlconf->targs[ct.task];
 
-					if(!(dtarg->flags & TASK_ARG_RX_RING)) {
-						set_errf("Core %u task %u is not expecting to receive through a ring\n", ct.core, ct.task);
-						return -1;
-					}
+				/* Control rings are not relevant at this point. */
+				if (ct.type)
+					continue;
 
-					dtarg->tot_rxrings++;
-					if (dtarg->tot_rxrings > MAX_RINGS_PER_TASK) {
-						set_errf("Core %u task %u is receiving from too many tasks", ct.core, ct.task);
-						return -1;
-					}
+				if (!(dtarg->flags & TASK_ARG_RX_RING)) {
+					set_errf("Core %u task %u is not expecting to receive through a ring\n",
+						 ct.core, ct.task);
+					return -1;
+				}
+
+				dtarg->tot_rxrings++;
+				if (dtarg->tot_rxrings > MAX_RINGS_PER_TASK) {
+					set_errf("Core %u task %u is receiving from too many tasks",
+						 ct.core, ct.task);
+					return -1;
 				}
 			}
 		}
@@ -1717,7 +1709,6 @@ int prox_read_config_file(void)
 
 	return check_cfg();
 }
-
 
 static void failed_rte_eal_init(__attribute__((unused))const char *prog_name)
 {
@@ -1816,7 +1807,6 @@ int prox_setup_rte(const char *prog_name)
 			rte_argv[argc] = rte_arg[argc];
 		}
 	}
-
 
 	if (rte_cfg.hugedir != NULL) {
 		strcpy(rte_arg[++argc], "--huge-dir");

@@ -59,14 +59,18 @@ static void prox_ip_cksum_hw(struct rte_mbuf *mbuf, uint16_t l2_len, uint16_t l3
 
 void prox_ip_cksum_sw(struct ipv4_hdr *buf);
 
-static inline void prox_ip_cksum(struct rte_mbuf *mbuf, struct ipv4_hdr *buf, uint16_t l2_len, uint16_t l3_len)
+static inline void prox_ip_cksum(struct rte_mbuf *mbuf, struct ipv4_hdr *buf, uint16_t l2_len, uint16_t l3_len, int offload)
 {
-	buf->hdr_checksum = 0;
 #ifdef SOFT_CRC
 	prox_ip_cksum_sw(buf);
-	/* TODO: calculate UDP checksum */
-#elif defined(HARD_CRC)
-	prox_ip_cksum_hw(mbuf, l2_len, l3_len);
+#else
+	buf->hdr_checksum = 0;
+	if (offload)
+		prox_ip_cksum_hw(mbuf, l2_len, l3_len);
+	else {
+		prox_ip_cksum_sw(buf);
+		/* TODO: calculate UDP checksum */
+	}
 #endif
 }
 

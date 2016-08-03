@@ -66,6 +66,9 @@ struct prox_port_cfg {
 	struct rte_eth_conf port_conf;
 	struct rte_eth_rxconf rx_conf;
 	struct rte_eth_txconf tx_conf;
+	struct {
+		int tx_offload_ipv4_cksum;
+	} capabilities;
 };
 
 extern rte_atomic32_t lsc;

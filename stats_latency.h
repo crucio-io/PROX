@@ -59,8 +59,11 @@ uint64_t stats_core_task_tot_lat_max(uint8_t lcore_id, uint8_t task_id);
 uint64_t stats_core_task_lat_avg(uint8_t lcore_id, uint8_t task_id);
 void lat_stats_reset(void);
 
-#ifndef NO_LATENCY_PER_PACKET
+#ifdef LATENCY_PER_PACKET
 void stats_core_lat(uint8_t lcore_id, uint8_t task_id, unsigned int *npackets, uint64_t *lat);
+#endif
+#ifdef LATENCY_DETAILS
+void stats_core_lat_histogram(uint8_t lcore_id, uint8_t task_id, uint64_t **buckets);
 #endif
 
 #endif /* _STATS_LATENCY_H_ */

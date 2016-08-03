@@ -117,7 +117,6 @@ static void init_task_lb_qinq(struct task_base *tbase, struct task_args *targ)
 	}
 	plog_info("\t\ttask_lb_qinq protocols_mask = 0x%x\n", task->protocols_mask);
 
-
 	if (targ->task_init->flag_features & TASK_FEATURE_LUT_QINQ_RSS)
 		tbase->flags |=  BASE_FLAG_LUT_QINQ_RSS;
 	if (targ->task_init->flag_features & TASK_FEATURE_LUT_QINQ_HASH)
@@ -139,7 +138,6 @@ static struct task_init task_init_lb_qinq_set_port = {
 	.handle = handle_lb_qinq_bulk_set_port,
 	.size = sizeof(struct task_lb_qinq)
 };
-
 
 static struct task_init task_init_lb_qinq_hash_friend = {
 	.mode_str = "lbqinq",
@@ -264,7 +262,6 @@ struct ether_packet {
 	};
 } __attribute__((packed));
 
-
 struct cpe_packet {
 	union {
 		struct qinq_packet  qp;
@@ -332,7 +329,6 @@ static inline uint8_t handle_lb_qinq(struct task_lb_qinq *task, struct rte_mbuf 
 		}
 		return OUT_DISCARD;
 	}
-
 
 	uint8_t worker = 0;
 	uint8_t proto = 0xFF;

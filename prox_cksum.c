@@ -91,7 +91,7 @@ static void prox_write_tcp_cksum_pseudo_hdr(struct ipv4_hdr *ip, uint16_t l3_len
 
 void prox_ip_udp_cksum(struct rte_mbuf *mbuf, struct ipv4_hdr *pip, uint16_t l2_len, uint16_t l3_len)
 {
-	prox_ip_cksum(mbuf, pip, l2_len, l3_len);
+	prox_ip_cksum(mbuf, pip, l2_len, l3_len, 1);
 	mbuf->ol_flags |= PKT_TX_UDP_CKSUM;
 	if (pip->next_proto_id == IPPROTO_UDP) {
 		prox_write_udp_cksum_pseudo_hdr(pip, l3_len);

@@ -32,6 +32,7 @@
 #include <rte_table_hash.h>
 #include <rte_cycles.h>
 
+#include "mbuf_utils.h"
 #include "prox_malloc.h"
 #include "prox_lua.h"
 #include "prox_lua_types.h"
@@ -159,8 +160,13 @@ static void init_task_qinq_encap4(struct task_base *tbase, struct task_args *tar
 		task->fake_packets[i] = (struct rte_mbuf*)((uint8_t*)&task->keys[i] - sizeof (struct rte_mbuf));
 	}
 
-	targ->lconf->ctrl_timeout = rte_get_tsc_hz()/targ->ctrl_freq;
+	targ->lconf->ctrl_timeout = freq_to_tsc(targ->ctrl_freq);
 	targ->lconf->ctrl_func_m[targ->task] = arp_msg;
+
+	struct prox_port_cfg *port = find_reachable_port(targ);
+	if (port) {
+		task->offload_crc = port->capabilities.tx_offload_ipv4_cksum;
+	}
 
 	/* TODO: check if it is not necessary to limit reverse mapping
 	   for the elements that have been changing in mapping? */
@@ -413,7 +419,6 @@ static void handle_qinq_encap4_untag_bulk(struct task_base *tbase, struct rte_mb
 	task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
 }
 
-
 static inline void extract_key_bulk(struct task_qinq_encap4 *task, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	for (uint16_t j = 0; j < n_pkts; ++j) {
@@ -449,7 +454,7 @@ static void handle_qinq_encap4_bulk_pe(struct task_base *tbase, struct rte_mbuf 
 	if (likely(lookup_hit_mask == pkts_mask)) {
 		for (uint16_t j = 0; j < n_pkts; ++j) {
 			struct cpe_pkt* cpe_pkt = (struct cpe_pkt*) rte_pktmbuf_prepend(mbufs[j], sizeof(struct qinq_hdr) - sizeof(struct ether_hdr));
-			uint16_t padlen = rte_pktmbuf_pkt_len(mbufs[j]) - rte_be_to_cpu_16(cpe_pkt->ipv4_hdr.total_length) - offsetof(struct cpe_pkt, ipv4_hdr);
+			uint16_t padlen = mbuf_calc_padlen(mbufs[j], cpe_pkt, &cpe_pkt->ipv4_hdr);
 
 			if (padlen) {
 				rte_pktmbuf_trim(mbufs[j], padlen);
@@ -465,7 +470,7 @@ static void handle_qinq_encap4_bulk_pe(struct task_base *tbase, struct rte_mbuf 
 				continue;
 			}
 			struct cpe_pkt* cpe_pkt = (struct cpe_pkt*) rte_pktmbuf_prepend(mbufs[j], sizeof(struct qinq_hdr) - sizeof(struct ether_hdr));
-			uint16_t padlen = rte_pktmbuf_pkt_len(mbufs[j]) - rte_be_to_cpu_16(cpe_pkt->ipv4_hdr.total_length) - offsetof(struct cpe_pkt, ipv4_hdr);
+			uint16_t padlen = mbuf_calc_padlen(mbufs[j], cpe_pkt, &cpe_pkt->ipv4_hdr);
 
 			if (padlen) {
 				rte_pktmbuf_trim(mbufs[j], padlen);
@@ -495,7 +500,8 @@ void handle_qinq_encap4_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, u
 			struct cpe_pkt* cpe_pkt = (struct cpe_pkt*) rte_pktmbuf_adj(mbufs[j], UPSTREAM_DELTA);
 			// We are receiving GRE tunnelled packets (and removing UPSTRAM_DELTA bytes), whose length is > 64 bytes
 			// So there should be no padding, but in case the is one, remove it
-			uint16_t padlen = rte_pktmbuf_pkt_len(mbufs[j]) - rte_be_to_cpu_16(cpe_pkt->ipv4_hdr.total_length) - offsetof(struct cpe_pkt, ipv4_hdr);
+			uint16_t padlen = mbuf_calc_padlen(mbufs[j], cpe_pkt, &cpe_pkt->ipv4_hdr);
+
 			if (padlen) {
 				rte_pktmbuf_trim(mbufs[j], padlen);
 			}
@@ -510,7 +516,8 @@ void handle_qinq_encap4_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, u
 				continue;
 			}
 			struct cpe_pkt* cpe_pkt = (struct cpe_pkt*) rte_pktmbuf_adj(mbufs[j], UPSTREAM_DELTA);
-			uint16_t padlen = rte_pktmbuf_pkt_len(mbufs[j]) - rte_be_to_cpu_16(cpe_pkt->ipv4_hdr.total_length) - offsetof(struct cpe_pkt, ipv4_hdr);
+			uint16_t padlen = mbuf_calc_padlen(mbufs[j], cpe_pkt, &cpe_pkt->ipv4_hdr);
+
 			if (padlen) {
 				rte_pktmbuf_trim(mbufs[j], padlen);
 			}
@@ -546,7 +553,7 @@ static inline uint8_t handle_qinq_encap4(struct task_qinq_encap4 *task, struct c
 	task->stats_per_user[entry->user]++;
 #endif
 	if (task->runtime_flags & TASK_TX_CRC) {
-		prox_ip_cksum(mbuf, &cpe_pkt->ipv4_hdr, sizeof(struct qinq_hdr), sizeof(struct ipv4_hdr));
+		prox_ip_cksum(mbuf, &cpe_pkt->ipv4_hdr, sizeof(struct qinq_hdr), sizeof(struct ipv4_hdr), task->offload_crc);
 	}
 	return entry->mac_port.out_idx;
 }
@@ -608,7 +615,6 @@ static void flow_iter_beg(struct flow_iter *iter, struct task_args *targ)
 		plog_info("\t\tCould not find flag feature from Load balancer => supposing TASK_FEATURE_GRE_ID\n");
 		flag_features = TASK_FEATURE_GRE_ID;
 	}
-
 
 	iter->idx = -1;
 	flow_iter_next(iter, targ);

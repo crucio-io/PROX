@@ -65,18 +65,18 @@ low_steps = 0.1
 medium_steps = 1.0 
 
 # Prox parameters
-tx_port4 = [19,27,55,63]
-tx_port5 = [20,28,56,64]
-tx_port6 = [21,29,57,65]
-tx_port7 = [22,30,58,66]
-tx_port2 = [23,31,59,67]
-tx_port3 = [24,32,60,68]
-tx_port0 = [25,33,61,69]
-tx_port1 = [26,34,62,70]
+tx_port0 = [19,27,55,63]
+tx_port1 = [20,28,56,64]
+tx_port2 = [21,29,57,65]
+tx_port3 = [22,30,58,66]
+tx_port4 = []
+tx_port5 = []
+tx_port6 = []
+tx_port7 = []
 tx_task = 0
 
-all_rx_cores = [1,2,3,4,5,6,7,10]
-rx_lat_cores = [1,2,3,4,5,6,7,10]
+all_rx_cores = [23,24,25,26]
+rx_lat_cores = [23,24,25,26]
 rx_task = 1
 
 # Some variables, do not change
@@ -553,7 +553,7 @@ def set_destination_ip(use_case, nb_destinations, traffic):
 	for c in tx_cores:
 		send_all_random([c], 34, "0XXXXXXXXXXXXX10", 2)
 		send_all_random([c], 36, "0XXXXXXXXXXXXX10", 2)
-		
+
 #========================================================================
 class TestDefinition():
     "Stores test parameters"

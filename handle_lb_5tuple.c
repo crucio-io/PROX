@@ -88,7 +88,6 @@ static inline uint8_t get_ipv4_dst_port(struct task_lb_5tuple *task, void *ipv4_
 	return (uint8_t)((ret < 0)? portid : task->out_if[ret]);
 }
 
-
 static inline uint8_t handle_lb_5tuple(struct task_lb_5tuple *task, struct rte_mbuf *mbuf)
 {
 	struct ether_hdr *eth_hdr;

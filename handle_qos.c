@@ -182,7 +182,7 @@ static struct task_init task_init_qos = {
 	.mode_str = "qos",
 	.init = init_task_qos,
 	.handle = handle_qos_bulk,
-	.flag_features = TASK_FEATURE_CLASSIFY | TASK_FEATURE_NEVER_DISCARDS | TASK_FEATURE_TWICE_RX | TASK_FEATURE_ZERO_RX,
+	.flag_features = TASK_FEATURE_CLASSIFY | TASK_FEATURE_NEVER_DISCARDS | TASK_FEATURE_MULTI_RX | TASK_FEATURE_ZERO_RX,
 	.size = sizeof(struct task_qos)
 };
 

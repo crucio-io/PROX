@@ -37,7 +37,7 @@ static struct task_init task_init_nop = {
 	.init = NULL,
 	.handle = handle_nop_bulk,
 	.thread_x = thread_nop,
-	.flag_features = TASK_FEATURE_NEVER_DISCARDS|TASK_FEATURE_TXQ_FLAGS_NOOFFLOADS|TASK_FEATURE_TXQ_FLAGS_NOMULTSEGS|TASK_FEATURE_THROUGHPUT_OPT|TASK_FEATURE_TWICE_RX,
+	.flag_features = TASK_FEATURE_NEVER_DISCARDS|TASK_FEATURE_TXQ_FLAGS_NOOFFLOADS|TASK_FEATURE_TXQ_FLAGS_NOMULTSEGS|TASK_FEATURE_THROUGHPUT_OPT|TASK_FEATURE_MULTI_RX,
 	.size = sizeof(struct task_nop),
 	.mbuf_size = 2048 + sizeof(struct rte_mbuf) + RTE_PKTMBUF_HEADROOM,
 };

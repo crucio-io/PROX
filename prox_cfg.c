@@ -132,7 +132,6 @@ int prox_core_to_str(char *dst, const size_t size, const int with_master)
 			return -1;
 		}
 
-
 		snprintf(dst + strlen(dst), size - strlen(dst), first? "%u" : ", %u", lcore_id);
 		first = 0;
 	}

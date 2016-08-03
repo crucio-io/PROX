@@ -95,7 +95,36 @@ static void __attribute__((noreturn)) prox_usage(const char *prgname)
 	exit(EXIT_FAILURE);
 }
 
-static void check_consistent_cfg(void)
+static void check_mixed_normal_pipeline(void)
+{
+	struct lcore_cfg *lconf = NULL;
+	uint32_t lcore_id = -1;
+
+	while (prox_core_next(&lcore_id, 0) == 0) {
+		lconf = &lcore_cfg[lcore_id];
+
+		int all_thread_nop = 1;
+		int generic = 0;
+		int pipeline = 0;
+		for (uint8_t task_id = 0; task_id < lconf->n_tasks_all; ++task_id) {
+			struct task_args *targ = &lconf->targs[task_id];
+			all_thread_nop = all_thread_nop &&
+				targ->task_init->thread_x == thread_nop;
+
+			pipeline = pipeline || targ->task_init->thread_x == thread_pipeline;
+			generic = generic || targ->task_init->thread_x == thread_generic;
+		}
+		PROX_PANIC(generic && pipeline, "Can't run both pipeline and normal thread on same core\n");
+
+		if (all_thread_nop)
+			lconf->thread_x = thread_nop;
+		else {
+			lconf->thread_x = thread_generic;
+		}
+	}
+}
+
+static void check_missing_rx(void)
 {
 	struct lcore_cfg *lconf = NULL;
 	struct task_args *targ;
@@ -103,25 +132,40 @@ static void check_consistent_cfg(void)
 	while (core_targ_next(&lconf, &targ, 0) == 0) {
 		PROX_PANIC((targ->flags & TASK_ARG_RX_RING) && targ->rx_rings[0] == 0 && !targ->tx_opt_ring_task,
 			   "Configuration Error - Core %u task %u Receiving from ring, but nobody xmitting to this ring\n", lconf->id, targ->id);
-
-		for (uint8_t ring_idx = 0; ring_idx < targ->nb_rxrings; ++ring_idx) {
-			plog_info("\tCore %u, task %u, rx_ring[%u] %p\n", lconf->id, targ->id, ring_idx, targ->rx_rings[ring_idx]);
-		}
 		if (targ->nb_rxports == 0 && targ->nb_rxrings == 0) {
-			PROX_PANIC(!(targ->task_init->flag_features & TASK_FEATURE_NO_RX),
+			PROX_PANIC(!task_init_flag_set(targ->task_init, TASK_FEATURE_NO_RX),
 				   "\tCore %u task %u: no rx_ports and no rx_rings configured while required by mode %s\n", lconf->id, targ->id, targ->task_init->mode_str);
 		}
 	}
 }
 
-static int chain_uses_refcnt(struct task_args *targ)
+static void check_cfg_consistent(void)
 {
-	if (targ->task_init->flag_features & TASK_FEATURE_TXQ_FLAGS_REFCOUNT)
+	check_missing_rx();
+	check_mixed_normal_pipeline();
+}
+
+static void plog_all_rings(void)
+{
+	struct lcore_cfg *lconf = NULL;
+	struct task_args *targ;
+
+	while (core_targ_next(&lconf, &targ, 0) == 0) {
+		for (uint8_t ring_idx = 0; ring_idx < targ->nb_rxrings; ++ring_idx) {
+			plog_info("\tCore %u, task %u, rx_ring[%u] %p\n", lconf->id, targ->id, ring_idx, targ->rx_rings[ring_idx]);
+		}
+	}
+}
+
+static int chain_flag_state(struct task_args *targ, uint32_t flag, int is_set)
+{
+	if (task_init_flag_set(targ->task_init, flag) == is_set)
 		return 1;
 
 	int ret = 0;
+
 	for (uint32_t i = 0; i < targ->n_prev_tasks; ++i) {
-		ret = chain_uses_refcnt(targ->prev_tasks[i]);
+		ret = chain_flag_state(targ->prev_tasks[i], flag, is_set);
 		if (ret)
 			return 1;
 	}
@@ -154,7 +198,7 @@ static void configure_if_tx_queues(struct task_args *targ, uint8_t socket)
 		/* Set the ETH_TXQ_FLAGS_NOREFCOUNT flag if none of
 		   the tasks up to the task transmitting to the port
 		   does not use refcnt. */
-		if (!chain_uses_refcnt(targ)) {
+		if (!chain_flag_state(targ, TASK_FEATURE_TXQ_FLAGS_REFCOUNT, 1)) {
 			prox_port_cfg[if_port].tx_conf.txq_flags = ETH_TXQ_FLAGS_NOREFCOUNT;
 			plog_info("\t\tEnabling No refcnt on port %d\n", if_port);
 		}
@@ -162,22 +206,27 @@ static void configure_if_tx_queues(struct task_args *targ, uint8_t socket)
 			plog_info("\t\tRefcnt used on port %d\n", if_port);
 		}
 
-		/* By default OFFLOAD is enabled */
-		if (targ->task_init->flag_features & TASK_FEATURE_TXQ_FLAGS_NOOFFLOADS) {
-			if (targ->nb_rxports == 0) {
-				/* When receiving from a ring, packet might have been modified in previous core and still need offload */
-				plog_info("\t\tNot disabling TX offloads on port %d, as not receiving from physical port\n", if_port);
-			} else {
-				prox_port_cfg[if_port].tx_conf.txq_flags |= ETH_TXQ_FLAGS_NOOFFLOADS;
-				plog_info("\t\tDisabling TX offloads on port %d\n", if_port);
-			}
+		/* By default OFFLOAD is enabled, but if the whole
+		   chain has NOOFFLOADS set all the way until the
+		   first task that receives from a port, it will be
+		   disabled for the destination port. */
+		if (chain_flag_state(targ, TASK_FEATURE_TXQ_FLAGS_NOOFFLOADS, 1)) {
+			prox_port_cfg[if_port].tx_conf.txq_flags |= ETH_TXQ_FLAGS_NOOFFLOADS;
+			plog_info("\t\tDisabling TX offloads on port %d\n", if_port);
+		} else {
+			plog_info("\t\tEnabling TX offloads on port %d\n", if_port);
 		}
+
 		/* By default NOMULTSEGS is disabled, as drivers/NIC might split packets on RX
 		   It should only be enabled when we know for sure that the RX does not split packets.
-		*/
-		if (targ->task_init->flag_features & TASK_FEATURE_TXQ_FLAGS_NOMULTSEGS) {
+		   Set the ETH_TXQ_FLAGS_NOMULTSEGS flag if none of the tasks up to the task
+		   transmitting to the port does not use multsegs. */
+		if (!chain_flag_state(targ, TASK_FEATURE_TXQ_FLAGS_NOMULTSEGS, 0)) {
 			prox_port_cfg[if_port].tx_conf.txq_flags |= ETH_TXQ_FLAGS_NOMULTSEGS;
 			plog_info("\t\tEnabling No MultiSegs on port %d\n", if_port);
+		}
+		else {
+			plog_info("\t\tMultiSegs used on port %d\n", if_port);
 		}
 	}
 }
@@ -474,7 +523,7 @@ static void setup_mempools_unique_per_socket(void)
 	uint32_t nb_cache_mbuf[MAX_SOCKETS] = {0};
 	uint32_t mbuf_size[MAX_SOCKETS] = {0};
 
-	while (core_targ_next_early(&lconf, &targ) == 0) {
+	while (core_targ_next_early(&lconf, &targ, 0) == 0) {
 		uint8_t socket = rte_lcore_to_socket_id(lconf->id);
 		PROX_ASSERT(socket < MAX_SOCKETS);
 
@@ -526,7 +575,7 @@ static void setup_mempools_unique_per_socket(void)
 	}
 
 	lconf = NULL;
-	while (core_targ_next_early(&lconf, &targ) == 0) {
+	while (core_targ_next_early(&lconf, &targ, 0) == 0) {
 		uint8_t socket = rte_lcore_to_socket_id(lconf->id);
 
 		if (targ->rx_ports[0] != OUT_DISCARD) {
@@ -632,7 +681,7 @@ static void setup_mempools_multiple_per_socket(void)
 	struct lcore_cfg *lconf = NULL;
 	struct task_args *targ;
 
-	while (core_targ_next_early(&lconf, &targ) == 0) {
+	while (core_targ_next_early(&lconf, &targ, 0) == 0) {
 		if (targ->rx_ports[0] == OUT_DISCARD)
 			continue;
 		setup_mempool_for_rx_task(lconf, targ);
@@ -709,7 +758,7 @@ static void init_port_activate(void)
 	struct task_args *targ;
 	uint8_t port_id = 0;
 
-	while (core_targ_next_early(&lconf, &targ) == 0) {
+	while (core_targ_next_early(&lconf, &targ, 0) == 0) {
 		printf("%p %p\n", lconf, targ);
 		for (int i = 0; i < targ->nb_rxports; i++) {
 			port_id = targ->rx_ports[i];
@@ -753,31 +802,9 @@ static void init_lcores(void)
 	init_rings();
 
 	plog_info("=== Checking configuration consistency ===\n");
-	check_consistent_cfg();
+	check_cfg_consistent();
 
-	lcore_id = -1;
-	while(prox_core_next(&lcore_id, 0) == 0) {
-		lconf = &lcore_cfg[lcore_id];
-
-		int all_thread_nop = 1;
-		int generic = 0;
-		int pipeline = 0;
-		for (uint8_t task_id = 0; task_id < lconf->n_tasks_all; ++task_id) {
-			struct task_args *targ = &lconf->targs[task_id];
-			all_thread_nop = all_thread_nop &&
-				targ->task_init->thread_x == thread_nop;
-
-			pipeline = pipeline || targ->task_init->thread_x == thread_pipeline;
-			generic = generic || targ->task_init->thread_x == thread_generic;
-		}
-		PROX_PANIC(generic && pipeline, "Can't run both pipeline and normal thread on same core\n");
-
-		if (all_thread_nop)
-			lconf->thread_x = thread_nop;
-		else {
-			lconf->thread_x = thread_generic;
-		}
-	}
+	plog_all_rings();
 
 	setup_all_task_structs_early_init();
 	plog_info("=== Initializing tasks ===\n");

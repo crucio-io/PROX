@@ -63,7 +63,7 @@ struct lat_test {
 	uint64_t tot_pkts;
 	uint64_t buckets[128];
 	uint64_t lost_packets;
-#ifndef NO_LATENCY_PER_PACKET
+#ifdef LATENCY_PER_PACKET
 	uint32_t cur_pkt;
 	uint64_t lat[MAX_PACKETS_FOR_LATENCY];
 #endif
@@ -94,6 +94,7 @@ struct task_lat {
 	uint64_t last_pkts_tsc;
 	struct lat_info *latency_buffer;
 	uint32_t latency_buffer_size;
+	uint64_t begin;
 	uint32_t bucket_size;
 	uint16_t lat_pos;
 	uint16_t packet_id_pos;
@@ -103,13 +104,10 @@ struct task_lat {
 	struct lat_test lt[2];
 	uint32_t queue[MAX_NB_QUEUES][PACKET_QUEUE_SIZE];
 	uint32_t tx_packet_index[MAX_NB_QUEUES];
-	struct rte_mbuf **mbufs;	
-	uint32_t *pkt_tx_time;	
-	uint8_t **hdr;	
-	uint32_t mbuf_size;
+	uint32_t *pkt_tx_time;
+	uint8_t **hdr;
 	FILE *fp_rx;
 	FILE *fp_tx;
-	uint8_t through_ring;
 };
 
 #endif /* _HANDLE_LAT_H_ */

@@ -47,8 +47,6 @@
 			assert(cond);		\
 		}				\
 	} while (0)
-
-
 #else
 #define PROX_ASSERT(cond) do {} while(0)
 #endif
