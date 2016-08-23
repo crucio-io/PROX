@@ -83,6 +83,8 @@ int parse_task_set(struct core_task_set *val, const char *str);
 
 int parse_int(uint32_t* val, const char *str);
 
+int parse_bigint(uint64_t* val, const char *str);
+
 int parse_str(char* dst, const char *str, size_t max_len);
 
 int parse_path(char *dst, const char *str, size_t max_len);
