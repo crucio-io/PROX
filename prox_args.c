@@ -811,7 +811,7 @@ static int get_core_cfg(unsigned sindex, char *str, void *data)
 		return parse_flag(&targ->flags, TASK_ARG_QINQ_ACL, pkey);
 	}
 	if (STR_EQ(str, "bps")) {
-		return parse_int(&targ->rate_bps, pkey);
+		return parse_bigint(&targ->rate_bps, pkey);
 	}
 	if (STR_EQ(str, "random")) {
 		return parse_str(targ->rand_str[targ->n_rand_str++], pkey, sizeof(targ->rand_str[0]));

@@ -189,7 +189,7 @@ struct task_args {
 	uint8_t                lb_friend_core;
 	uint8_t                lb_friend_task;
 	/* gen related*/
-	uint32_t               rate_bps;
+	uint64_t               rate_bps;
 	uint32_t               n_rand_str;
 	char                   rand_str[64][64];
 	uint32_t               rand_offset[64];

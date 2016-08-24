@@ -987,6 +987,23 @@ int parse_flag(uint32_t* val, uint32_t flag, const char *str2)
 	return 0;
 }
 
+int parse_bigint(uint64_t* val, const char *str2)
+{
+	char str[MAX_STR_LEN_PROC];
+
+	if (parse_vars(str, sizeof(str), str2))
+		return -1;
+
+	int64_t tmp = strtol(str, 0, 0);
+	if (tmp < 0) {
+		set_errf("Integer is negative");
+		return -2;
+	}
+	*val = tmp;
+
+	return 0;
+}
+
 int parse_int(uint32_t* val, const char *str2)
 {
 	char str[MAX_STR_LEN_PROC];
