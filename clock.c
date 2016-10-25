@@ -44,10 +44,13 @@
 uint32_t rdtsc_overhead;
 uint32_t rdtsc_overhead_stats;
 
+uint64_t thresh;
+uint64_t tsc_hz;
+
 /* calculate how much overhead is involved with calling rdtsc. This value has
    to be taken into account where the time spent running a small piece of code
    is measured */
-void prox_init_tsc_overhead(void)
+static void init_tsc_overhead(void)
 {
 	volatile uint32_t min_without_overhead = UINT32_MAX;
 	volatile uint32_t min_with_overhead = UINT32_MAX;
@@ -89,6 +92,13 @@ void prox_init_tsc_overhead(void)
 	}
 
 	rdtsc_overhead_stats = rdtsc_overhead + min_stats_overhead - min_without_overhead;
+}
+
+void clock_init(void)
+{
+	init_tsc_overhead();
+	tsc_hz = rte_get_tsc_hz();
+	thresh = UINT64_MAX/tsc_hz;
 }
 
 uint64_t str_to_tsc(const char *from)
@@ -155,6 +165,73 @@ uint64_t nsec_to_tsc(uint64_t nsec)
 		return nsec * rte_get_tsc_hz() / 1000000000;
 	else
 		return nsec / 1000000000 * rte_get_tsc_hz();
+}
+
+uint64_t tsc_to_msec(uint64_t tsc)
+{
+	if (tsc < UINT64_MAX / 1000) {
+		return tsc * 1000 / rte_get_tsc_hz();
+	} else {
+		return tsc / (rte_get_tsc_hz() / 1000);
+	}
+}
+
+uint64_t tsc_to_usec(uint64_t tsc)
+{
+	if (tsc < UINT64_MAX / 1000000) {
+		return tsc * 1000000 / rte_get_tsc_hz();
+	} else {
+		return tsc / (rte_get_tsc_hz() / 1000000);
+	}
+}
+
+uint64_t tsc_to_nsec(uint64_t tsc)
+{
+	if (tsc < UINT64_MAX / 1000000000) {
+		return tsc * 1000000000 / rte_get_tsc_hz();
+	} else {
+		return tsc / (rte_get_tsc_hz() / 1000000000);
+	}
+}
+
+uint64_t tsc_to_sec(uint64_t tsc)
+{
+	return tsc / rte_get_tsc_hz();
+}
+
+struct time_unit tsc_to_time_unit(uint64_t tsc)
+{
+	struct time_unit ret;
+	uint64_t hz = rte_get_tsc_hz();
+
+	ret.sec = tsc/hz;
+	ret.nsec = (tsc - ret.sec*hz)*1000000000/hz;
+
+	return ret;
+}
+
+uint64_t time_unit_to_usec(struct time_unit *time_unit)
+{
+	return time_unit->sec * 1000000 + time_unit->nsec/1000;
+}
+
+uint64_t time_unit_to_nsec(struct time_unit *time_unit)
+{
+	return time_unit->sec * 1000000000 + time_unit->nsec;
+}
+
+int time_unit_cmp(struct time_unit *left, struct time_unit *right)
+{
+	if (left->sec < right->sec)
+		return -1;
+	if (left->sec > right->sec)
+		return 1;
+
+	if (left->nsec < right->nsec)
+		return -1;
+	if (left->nsec > right->nsec)
+		return -1;
+	return 0;
 }
 
 uint64_t freq_to_tsc(uint64_t times_per_sec)

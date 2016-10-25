@@ -32,6 +32,9 @@
 #ifndef _STATS_MEMPOOL_H_
 #define _STATS_MEMPOOL_H_
 
+#include <inttypes.h>
+#include <stddef.h>
+
 struct mempool_stats {
 	struct rte_mempool *pool;
 	uint16_t port;

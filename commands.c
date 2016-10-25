@@ -804,9 +804,9 @@ void cmd_rx_tx_info(void)
 			struct task_args *targ = &lcore_cfg[lcore_id].targs[task_id];
 
 			plog_info("Core %u:", lcore_id);
-			if (targ->rx_ports[0] != OUT_DISCARD) {
+			if (targ->rx_port_queue[0].port != OUT_DISCARD) {
 				for (int i = 0; i < targ->nb_rxports; i++) {
-					plog_info(" RX port %u (queue %u)", targ->rx_ports[i], targ->rx_queues[i]);
+					plog_info(" RX port %u (queue %u)", targ->rx_port_queue[i].port, targ->rx_port_queue[i].queue);
 				}
 			}
 			else {

@@ -162,6 +162,9 @@ void stats_ring_init(void)
 		}
 	}
 
+	/* The actual usable space for a ring is size - 1. There is at
+	   most one free entry in the ring to distinguish between
+	   full/empty. */
 	for (uint16_t ring_id = 0; ring_id < rsm->n_rings; ++ring_id)
-		rsm->ring_stats[ring_id].size = rsm->ring_stats[ring_id].ring->prod.size;
+		rsm->ring_stats[ring_id].size = rsm->ring_stats[ring_id].ring->prod.size - 1;
 }

@@ -51,6 +51,7 @@
 #include "stats_port.h"
 #include "stats_latency.h"
 #include "stats_global.h"
+#include "stats_prio_task.h"
 
 #include "handle_routing.h"
 #include "handle_qinq_decap4.h"
@@ -210,7 +211,7 @@ static int parse_cmd_reset_lat_stats(const char *str, struct input *input)
 		return -1;
 	}
 
-	lat_stats_reset();
+	stats_latency_reset();
 	return 0;
 }
 
@@ -255,9 +256,12 @@ static int parse_cmd_dump_rx(const char *str, struct input *input)
 
 static int parse_cmd_pps_unit(const char *str, struct input *input)
 {
-	if (sscanf(str, "%u", &prox_cfg.pps_unit) != 1) {
+	uint32_t val;
+
+	if (sscanf(str, "%u", &val) != 1) {
 		return -1;
 	}
+	display_set_pps_unit(val);
 	return 0;
 }
 
@@ -490,9 +494,8 @@ static int parse_cmd_reset_values_all(const char *str, struct input *input)
 		for (task_id = 0; task_id < lcore_cfg[lcore_id].n_tasks_all; task_id++) {
 			if (task_is_mode(lcore_id, task_id, "gen", "")) {
 				struct task_base *tbase = lcore_cfg[lcore_id].tasks_all[task_id];
-				uint32_t n_values = task_gen_get_n_values(tbase);
 
-				plog_info("Resetting values on core %d task %d from %d randoms\n", lcore_id, task_id, n_values);
+				plog_info("Resetting values on core %d task %d\n", lcore_id, task_id);
 				task_gen_reset_values(tbase);
 			}
 		}
@@ -515,9 +518,8 @@ static int parse_cmd_reset_values(const char *str, struct input *input)
 			}
 			else {
 				struct task_base *tbase = lcore_cfg[lcore_id].tasks_all[task_id];
-				uint32_t n_values = task_gen_get_n_values(tbase);
 
-				plog_info("Resetting values on core %d task %d from %d randoms\n", lcore_id, task_id, n_values);
+				plog_info("Resetting values on core %d task %d\n", lcore_id, task_id);
 				task_gen_reset_values(tbase);
 			}
 		}
@@ -1301,25 +1303,36 @@ static int parse_cmd_lat_stats(const char *str, struct input *input)
 				plog_err("Core %u task %u is not measuring latency\n", lcore_id, task_id);
 			}
 			else {
-				uint64_t lat_min, lat_max, lat_avg, last_tsc, tot_lat_min, tot_lat_max;
+				struct stats_latency *stats = stats_latency_find(lcore_id, task_id);
+				struct stats_latency *tot = stats_latency_tot_find(lcore_id, task_id);
 
-				lat_min = stats_core_task_lat_min(lcore_id, task_id);
-				lat_max = stats_core_task_lat_max(lcore_id, task_id);
-				tot_lat_min = stats_core_task_tot_lat_min(lcore_id, task_id);
-				tot_lat_max = stats_core_task_tot_lat_max(lcore_id, task_id);
-				lat_avg = stats_core_task_lat_avg(lcore_id, task_id);
-				last_tsc = stats_core_task_last_tsc(lcore_id, task_id);
+				uint64_t last_tsc = stats_core_task_last_tsc(lcore_id, task_id);
+				uint64_t lat_min_usec = time_unit_to_usec(&stats->min.time);
+				uint64_t lat_max_usec = time_unit_to_usec(&stats->max.time);
+				uint64_t tot_lat_min_usec = time_unit_to_usec(&tot->min.time);
+				uint64_t tot_lat_max_usec = time_unit_to_usec(&tot->max.time);
+				uint64_t lat_avg_usec = time_unit_to_usec(&stats->avg.time);
 
 				if (input->reply) {
 					char buf[128];
 					snprintf(buf, sizeof(buf),
 					 	"%"PRIu64",%"PRIu64",%"PRIu64",%"PRIu64",%"PRIu64",%"PRIu64",%"PRIu64"\n",
-						 lat_min, lat_max, lat_avg, tot_lat_min, tot_lat_max, last_tsc, rte_get_tsc_hz());
+						 lat_min_usec,
+						 lat_max_usec,
+						 lat_avg_usec,
+						 tot_lat_min_usec,
+						 tot_lat_max_usec,
+						 last_tsc,
+						 rte_get_tsc_hz());
 					input->reply(input, buf, strlen(buf));
 				}
 				else {
 					plog_info("min: %"PRIu64", max: %"PRIu64", avg: %"PRIu64", min since reset: %"PRIu64", max since reset: %"PRIu64"\n",
-					  	lat_min, lat_max, lat_avg, tot_lat_min, tot_lat_max);
+						  lat_min_usec,
+						  lat_max_usec,
+						  lat_avg_usec,
+						  tot_lat_min_usec,
+						  tot_lat_max_usec);
 				}
 			}
 		}
@@ -1350,32 +1363,9 @@ static int parse_cmd_irq(const char *str, struct input *input)
 	return 0;
 }
 
-static void task_lat_show_latency_per_packet_stats(uint8_t lcore_id, uint8_t task_id, struct input *input)
-{
-#ifdef LATENCY_PER_PACKET
-	unsigned int npackets;
-	uint64_t lat[MAX_PACKETS_FOR_LATENCY];
-
-	stats_core_lat(lcore_id, task_id, &npackets, lat);
-
-	if (input->reply) {
-		char buf[4096] = {0};
-		for (size_t i = 0; i < npackets; i++)
-			sprintf(buf+strlen(buf), "[%zu]: %"PRIu64"\n", i, lat[i]);
-		input->reply(input, buf, strlen(buf));
-	}
-	else {
-		for (size_t i = 0; i < npackets; i++)
-			plog_info("[%zu]: %"PRIu64"\n", i, lat[i]);
-	}
-#else
-	plog_info("LATENCY_PER_PACKET disabled\n");
-#endif
-}
-
 static void task_lat_show_latency_histogram(uint8_t lcore_id, uint8_t task_id, struct input *input)
 {
-#ifdef LATENCY_DETAILS
+#ifdef LATENCY_HISTOGRAM
 	uint64_t *buckets;
 
 	stats_core_lat_histogram(lcore_id, task_id, &buckets);
@@ -1399,12 +1389,6 @@ static void task_lat_show_latency_histogram(uint8_t lcore_id, uint8_t task_id, s
 #endif
 }
 
-static void task_lat_show_stats(uint8_t lcore_id, uint8_t task_id, struct input *input)
-{
-	task_lat_show_latency_per_packet_stats(lcore_id, task_id, input);
-	task_lat_show_latency_histogram(lcore_id, task_id, input);
-}
-
 static int parse_cmd_lat_packets(const char *str, struct input *input)
 {
 	unsigned lcores[RTE_MAX_LCORE], lcore_id, task_id, nb_cores;
@@ -1419,7 +1403,36 @@ static int parse_cmd_lat_packets(const char *str, struct input *input)
 				plog_err("Core %u task %u is not measuring latency\n", lcore_id, task_id);
 			}
 			else {
-				task_lat_show_stats(lcore_id, task_id, input);
+				task_lat_show_latency_histogram(lcore_id, task_id, input);
+			}
+		}
+	}
+	return 0;
+}
+
+static int parse_cmd_accuracy(const char *str, struct input *input)
+{
+	unsigned lcores[RTE_MAX_LCORE], lcore_id, task_id, nb_cores;
+	uint32_t val;
+
+	if (parse_core_task(str, lcores, &task_id, &nb_cores))
+		return -1;
+	if (!(str = strchr_skip_twice(str, ' ')))
+		return -1;
+	if (sscanf(str, "%"PRIu32"", &val) != 1)
+		return -1;
+
+	if (cores_task_are_valid(lcores, task_id, nb_cores)) {
+		for (unsigned int i = 0; i < nb_cores; i++) {
+			lcore_id = lcores[i];
+
+			if (!task_is_mode(lcore_id, task_id, "lat", "")) {
+				plog_err("Core %u task %u is not measuring latency\n", lcore_id, task_id);
+			}
+			else {
+				struct task_base *tbase = lcore_cfg[lcore_id].tasks_all[task_id];
+
+				task_lat_set_accuracy_limit((struct task_lat *)tbase, val);
 			}
 		}
 	}
@@ -1453,9 +1466,15 @@ static int parse_cmd_version(const char *str, struct input *input)
 		input->reply(input, buf, strlen(buf));
 	}
 	else {
+#ifndef RTE_VER_YEAR
 		plog_info("prox version: %d.%d, DPDK version: %d.%d.%d\n",
 			  VERSION_MAJOR, VERSION_MINOR,
 			  RTE_VER_MAJOR, RTE_VER_MINOR, RTE_VER_PATCH_LEVEL);
+#else
+		plog_info("prox version: %d.%d, DPDK version: %d.%d.%d\n",
+			  VERSION_MAJOR, VERSION_MINOR,
+			  RTE_VER_YEAR, RTE_VER_MONTH, RTE_VER_MINOR);
+#endif
 	}
 	return 0;
 }
@@ -1518,6 +1537,7 @@ static struct cmd_str cmd_strings[] = {
 	{"lat stats", "<core id> <task id>", "Print min,max,avg latency as measured during last sampling interval", parse_cmd_lat_stats},
 	{"irq stats", "<core id> <task id>", "Print irq related infos", parse_cmd_irq},
 	{"lat packets", "<core id> <task id>", "Print the latency for each of the last set of packets", parse_cmd_lat_packets},
+	{"accuracy limit", "<core id> <task id> <nsec>", "Only consider latency of packets that were measured with an error no more than <nsec>", parse_cmd_accuracy},
 	{"core stats", "<core id> <task id>", "Print rx/tx/drop for task <task id> running on core <core id>", parse_cmd_core_stats},
 	{"port_stats", "<port id>", "Print rate for no_mbufs, ierrors, rx_bytes, tx_bytes, rx_pkts, tx_pkts and totals for RX, TX, no_mbufs ierrors for port <port id>", parse_cmd_port_stats},
 	{"read reg", "", "Read register", parse_cmd_read_reg},

@@ -131,6 +131,15 @@ static struct task_init task_init_lb_qinq = {
 	.size = sizeof(struct task_lb_qinq)
 };
 
+/*
+	Add correct port id to mbufs coming from a DPDK ring port in the loadbalancer.
+	For the split-bng using DPDK rings between the vSwitch and the VMs
+	we need to know the port from which a packet was received.
+	The ring PMD in dpdk does not update the port field in the mbuf
+	and thus we have no control over the port numbers that are being used.
+	This submode allows the loadbalancer to set the port number on which it
+	received the mbuf.
+*/
 static struct task_init task_init_lb_qinq_set_port = {
 	.mode_str = "lbqinq",
 	.sub_mode_str = "lut_qinq_set_port",
@@ -139,6 +148,9 @@ static struct task_init task_init_lb_qinq_set_port = {
 	.size = sizeof(struct task_lb_qinq)
 };
 
+/*
+	Load Balance on Hash of combination of cvlan and svlan
+*/
 static struct task_init task_init_lb_qinq_hash_friend = {
 	.mode_str = "lbqinq",
 	.sub_mode_str ="lut_qinq_hash_friend",
@@ -148,6 +160,10 @@ static struct task_init task_init_lb_qinq_hash_friend = {
 	.size = sizeof(struct task_lb_qinq)
 };
 
+/*
+	Load Balance on rss of combination of cvlan and svlan.
+	This could be used to compare with HW implementations.
+*/
 static struct task_init task_init_lb_qinq_rss_friend = {
 	.mode_str = "lbqinq",
 	.sub_mode_str ="lut_qinq_rss_friend",

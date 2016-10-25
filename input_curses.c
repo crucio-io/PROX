@@ -162,6 +162,10 @@ static int get_char(EditLine *e, char *c)
 			}
 		}
 	}
+	if (*c == '=') {
+		toggle_display_screen();
+		return 0;
+	}
 
 	/* Escape by itself is the first character used for more
 	   complex escape sequences like F-keys. libedit can't be used

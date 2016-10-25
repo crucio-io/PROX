@@ -85,6 +85,10 @@ void tx_pkt_dump(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pk
 void tx_pkt_distr(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts, uint8_t *out);
 void tx_pkt_bw(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts, uint8_t *out);
 
+uint16_t tx_try_sw1(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts);
+uint16_t tx_try_hw1(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts);
+uint16_t tx_try_self(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts);
+
 /* When there are no output ports, this function is configured as the
    tx function. This tx function can be used to make each task a
    sink. */

@@ -40,14 +40,15 @@
 #define STATS_CONS_F_LATENCY    0x20
 #define STATS_CONS_F_L4GEN      0x40
 #define STATS_CONS_F_GLOBAL     0x80
-#define STATS_CONS_F_ALL        0xff
+#define STATS_CONS_F_PRIO_TASKS 0x100
+#define STATS_CONS_F_ALL        0x1ff
 
 struct stats_cons {
 	void (*init)(void);
 	void (*notify)(void);
 	void (*refresh)(void); /* Only called if not NULL, used to signal lsc or core stop/start */
 	void (*finish)(void);
-	uint8_t flags;
+	uint16_t flags;
 };
 
 #endif /* _STATS_CONS_H_ */

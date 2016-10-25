@@ -44,6 +44,7 @@
 #include "stats_l4gen.h"
 #include "stats_latency.h"
 #include "stats_global.h"
+#include "stats_prio_task.h"
 
 struct stats_path_str {
 	const char *str;
@@ -97,6 +98,29 @@ static uint64_t sp_task_drop_tx_fail(int argc, const char *argv[])
 	if (args_to_core_task(argv[0], argv[1], &c, &t))
 		return -1;
 	return stats_get_task_stats_sample(c, t, 1)->drop_tx_fail;
+}
+
+static uint64_t sp_task_drop_tx_fail_prio(int argc, const char *argv[])
+{
+	struct task_stats_sample *last;
+	uint32_t c, t;
+
+	if (args_to_core_task(argv[0], argv[1], &c, &t))
+		return -1;
+	if (stats_get_prio_task_stats_sample_by_core_task(c, t, 1))
+		return stats_get_prio_task_stats_sample_by_core_task(c, t, 1)->drop_tx_fail_prio[atoi(argv[2])];
+	else
+		return -1;
+}
+
+static uint64_t sp_task_rx_prio(int argc, const char *argv[])
+{
+	struct task_stats_sample *last;
+	uint32_t c, t;
+
+	if (args_to_core_task(argv[0], argv[1], &c, &t))
+		return -1;
+	return stats_get_prio_task_stats_sample_by_core_task(c, t, 1)->rx_prio[atoi(argv[2])];
 }
 
 static uint64_t sp_task_drop_discard(int argc, const char *argv[])
@@ -273,22 +297,17 @@ static uint64_t sp_l4gen_created_bundles(int argc, const char *argv[])
 
 static uint64_t sp_latency_min(int argc, const char *argv[])
 {
-	struct lat_test *lat_test = NULL;
-	uint64_t min_usec;
+	struct stats_latency *lat_test = NULL;
 
 	if (atoi(argv[0]) >= stats_get_n_latency())
 		return -1;
-	lat_test = stats_get_lat_stats(atoi(argv[0]));
+	lat_test = stats_latency_get(atoi(argv[0]));
 
-	if (!lat_test->tot_pkts)
+	if (!lat_test->tot_packets)
 		return -1;
 
-	if ((lat_test->min_lat << LATENCY_ACCURACY) < UINT64_MAX/1000000)
-		min_usec = (lat_test->min_lat<<LATENCY_ACCURACY)*1000000/rte_get_tsc_hz();
-	else
-		min_usec = (lat_test->min_lat<<LATENCY_ACCURACY)/(rte_get_tsc_hz()/1000000);
-
-	return min_usec;
+	struct time_unit tu = lat_test->min.time;
+	return time_unit_to_usec(&tu);
 }
 
 static uint64_t sp_mem_used(int argc, const char *argv[])
@@ -477,42 +496,176 @@ static uint64_t sp_port_tsc(int argc, const char *argv[])
 
 static uint64_t sp_latency_max(int argc, const char *argv[])
 {
-	struct lat_test *lat_test = NULL;
-	uint64_t max_usec;
+	struct stats_latency *lat_test = NULL;
 
 	if (atoi(argv[0]) >= stats_get_n_latency())
 		return -1;
-	lat_test = stats_get_lat_stats(atoi(argv[0]));
+	lat_test = stats_latency_get(atoi(argv[0]));
 
-	if (!lat_test->tot_pkts)
+	if (!lat_test->tot_packets)
 		return -1;
 
-	if ((lat_test->max_lat << LATENCY_ACCURACY) < UINT64_MAX/1000000)
-		max_usec = (lat_test->max_lat<<LATENCY_ACCURACY)*1000000/rte_get_tsc_hz();
-	else
-		max_usec = (lat_test->max_lat<<LATENCY_ACCURACY)/(rte_get_tsc_hz()/1000000);
-
-	return max_usec;
+	struct time_unit tu = lat_test->max.time;
+	return time_unit_to_usec(&tu);
 }
 
 static uint64_t sp_latency_avg(int argc, const char *argv[])
 {
-	struct lat_test *lat_test = NULL;
-	uint64_t avg_usec;
+	struct stats_latency *lat_test = NULL;
 
 	if (atoi(argv[0]) >= stats_get_n_latency())
 		return -1;
-	lat_test = stats_get_lat_stats(atoi(argv[0]));
+	lat_test = stats_latency_get(atoi(argv[0]));
 
-	if (!lat_test->tot_pkts)
+	if (!lat_test->tot_packets)
 		return -1;
 
-	if ((lat_test->tot_lat << LATENCY_ACCURACY) < UINT64_MAX/1000000)
-		avg_usec = (lat_test->tot_lat<<LATENCY_ACCURACY)*1000000/(lat_test->tot_pkts*rte_get_tsc_hz());
-	else
-		avg_usec = (lat_test->tot_lat<<LATENCY_ACCURACY)/(lat_test->tot_pkts*rte_get_tsc_hz()/1000000);
+	struct time_unit tu = lat_test->avg.time;
+	return time_unit_to_usec(&tu);
+}
 
-	return avg_usec;
+static uint64_t sp_latency_lost(int argc, const char *argv[])
+{
+	struct stats_latency *lat_test = NULL;
+
+	if (atoi(argv[0]) >= stats_get_n_latency())
+		return -1;
+	lat_test = stats_latency_get(atoi(argv[0]));
+
+	if (!lat_test->tot_packets)
+		return -1;
+
+	return lat_test->lost_packets;
+}
+
+static uint64_t sp_latency_tot_lost(int argc, const char *argv[])
+{
+	struct stats_latency *lat_test = NULL;
+
+	if (atoi(argv[0]) >= stats_get_n_latency())
+		return -1;
+	lat_test = stats_latency_tot_get(atoi(argv[0]));
+
+	if (!lat_test->tot_packets)
+		return -1;
+
+	return lat_test->lost_packets;
+}
+
+static uint64_t sp_latency_total(int argc, const char *argv[])
+{
+	struct stats_latency *lat_test = NULL;
+
+	if (atoi(argv[0]) >= stats_get_n_latency())
+		return -1;
+	lat_test = stats_latency_get(atoi(argv[0]));
+
+	if (!lat_test->tot_all_packets)
+		return -1;
+
+	return lat_test->tot_all_packets;
+}
+
+static uint64_t sp_latency_used(int argc, const char *argv[])
+{
+	struct stats_latency *lat_test = NULL;
+
+	if (atoi(argv[0]) >= stats_get_n_latency())
+		return -1;
+	lat_test = stats_latency_get(atoi(argv[0]));
+
+	if (!lat_test->tot_all_packets)
+		return -1;
+
+	return lat_test->tot_packets;
+}
+
+static uint64_t sp_latency_tot_total(int argc, const char *argv[])
+{
+	struct stats_latency *lat_test = NULL;
+
+	if (atoi(argv[0]) >= stats_get_n_latency())
+		return -1;
+	lat_test = stats_latency_tot_get(atoi(argv[0]));
+
+	if (!lat_test->tot_all_packets)
+		return -1;
+
+	return lat_test->tot_all_packets;
+}
+
+static uint64_t sp_latency_tot_used(int argc, const char *argv[])
+{
+	struct stats_latency *lat_test = NULL;
+
+	if (atoi(argv[0]) >= stats_get_n_latency())
+		return -1;
+	lat_test = stats_latency_tot_get(atoi(argv[0]));
+
+	if (!lat_test->tot_all_packets)
+		return -1;
+
+	return lat_test->tot_packets;
+}
+
+static uint64_t sp_latency_tot_min(int argc, const char *argv[])
+{
+	struct stats_latency *lat_test = NULL;
+
+	if (atoi(argv[0]) >= stats_get_n_latency())
+		return -1;
+	lat_test = stats_latency_tot_get(atoi(argv[0]));
+
+	if (!lat_test->tot_packets)
+		return -1;
+
+	struct time_unit tu = lat_test->min.time;
+	return time_unit_to_usec(&tu);
+}
+
+static uint64_t sp_latency_tot_max(int argc, const char *argv[])
+{
+	struct stats_latency *lat_test = NULL;
+
+	if (atoi(argv[0]) >= stats_get_n_latency())
+		return -1;
+	lat_test = stats_latency_tot_get(atoi(argv[0]));
+
+	if (!lat_test->tot_packets)
+		return -1;
+
+	struct time_unit tu = lat_test->max.time;
+	return time_unit_to_usec(&tu);
+}
+
+static uint64_t sp_latency_tot_avg(int argc, const char *argv[])
+{
+	struct stats_latency *lat_test = NULL;
+
+	if (atoi(argv[0]) >= stats_get_n_latency())
+		return -1;
+	lat_test = stats_latency_tot_get(atoi(argv[0]));
+
+	if (!lat_test->tot_packets)
+		return -1;
+
+	struct time_unit tu = lat_test->avg.time;
+	return time_unit_to_usec(&tu);
+}
+
+static uint64_t sp_latency_stddev(int argc, const char *argv[])
+{
+	struct stats_latency *lat_test = NULL;
+
+	if (atoi(argv[0]) >= stats_get_n_latency())
+		return -1;
+	lat_test = stats_latency_get(atoi(argv[0]));
+
+	if (!lat_test->tot_packets)
+		return -1;
+
+	struct time_unit tu = lat_test->stddev.time;
+	return time_unit_to_usec(&tu);
 }
 
 static uint64_t sp_ring_used(int argc, const char *argv[])
@@ -599,6 +752,8 @@ struct stats_path_str stats_paths[] = {
 	{"task.core(#).task(#).rx.bytes", sp_task_rx_bytes},
 	{"task.core(#).task(#).tx.bytes", sp_task_tx_bytes},
 	{"task.core(#).task(#).tsc", sp_task_tsc},
+	{"task.core(#).task(#).drop.tx_fail_prio(#)", sp_task_drop_tx_fail_prio},
+	{"task.core(#).task(#).rx_prio(#)", sp_task_rx_prio},
 
 	{"port(#).no_mbufs", sp_port_no_mbufs},
 	{"port(#).ierrors", sp_port_ierrors},
@@ -622,6 +777,16 @@ struct stats_path_str stats_paths[] = {
 	{"latency(#).min", sp_latency_min},
 	{"latency(#).max", sp_latency_max},
 	{"latency(#).avg", sp_latency_avg},
+	{"latency(#).lost", sp_latency_lost},
+	{"latency(#).used", sp_latency_used},
+	{"latency(#).total", sp_latency_total},
+	{"latency(#).tot.min", sp_latency_tot_min},
+	{"latency(#).tot.max", sp_latency_tot_max},
+	{"latency(#).tot.avg", sp_latency_tot_avg},
+	{"latency(#).tot.lost", sp_latency_tot_lost},
+	{"latency(#).tot.used", sp_latency_tot_used},
+	{"latency(#).tot.total", sp_latency_tot_total},
+	{"latency(#).stddev", sp_latency_stddev},
 
 	{"ring(#).used", sp_ring_used},
 	{"ring(#).free", sp_ring_free},

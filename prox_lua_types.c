@@ -447,6 +447,7 @@ int lua_to_next_hop(struct lua_State *L, enum lua_place from, const char *name, 
 			return -1;
 
 		PROX_PANIC(port_id >= PROX_MAX_PORTS, "Port id too high (only supporting %d ports)\n", PROX_MAX_PORTS);
+		PROX_PANIC(next_hop_index >= MAX_HOP_INDEX, "Next-hop to high (only supporting %d next hops)\n", MAX_HOP_INDEX);
 
 		ret[next_hop_index].mac_port.out_idx = port_id;
 		ret[next_hop_index].ip_dst = ip;
@@ -491,6 +492,7 @@ int lua_to_next_hop6(struct lua_State *L, enum lua_place from, const char *name,
 			return -1;
 
 		PROX_PANIC(port_id >= PROX_MAX_PORTS, "Port id too high (only supporting %d ports)\n", PROX_MAX_PORTS);
+		PROX_PANIC(next_hop_index >= MAX_HOP_INDEX, "Next-hop to high (only supporting %d next hops)\n", MAX_HOP_INDEX);
 
 		ret[next_hop_index].mac_port.out_idx = port_id;
 		memcpy(ret[next_hop_index].ip_dst,ip, 16);
@@ -531,7 +533,14 @@ int lua_to_routes4(struct lua_State *L, enum lua_place from, const char *name, u
 	n_tot_rules = lua_tointeger(L, -1);
 	n_loaded_rules = 0;
 	lua_pop(L, 1);
+#ifdef RTE_VER_YEAR
+	struct rte_lpm_config conf;
+	conf.max_rules = 2 * n_tot_rules;
+	conf.number_tbl8s = 256;
+	new_lpm = rte_lpm_create(lpm_name, socket, &conf);
+#else
 	new_lpm = rte_lpm_create(lpm_name, socket, 2 * n_tot_rules, 0);
+#endif
 	PROX_PANIC(NULL == new_lpm, "Failed to allocate lpm\n");
 
 	lua_pushnil(L);

@@ -32,6 +32,8 @@
 #ifndef _DEFAULTS_H_
 #define _DEFAULTS_H_
 
+#include <rte_ether.h>
+
 struct prox_cfg;
 struct lcore_cfg;
 

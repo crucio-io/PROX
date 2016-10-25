@@ -143,7 +143,6 @@ void stats_task_update(void)
 		last->rx_bytes     = stats->rx_bytes;
 		last->drop_bytes   = stats->drop_bytes;
 		after = rte_rdtsc();
-
 		last->tsc = (before >> 1) + (after >> 1);
 	}
 }

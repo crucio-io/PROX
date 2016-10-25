@@ -33,6 +33,10 @@
 
 #include "prox_malloc.h"
 
+#ifndef RTE_CACHE_LINE_SIZE
+#define RTE_CACHE_LINE_SIZE CACHE_LINE_SIZE
+#endif
+
 void *prox_zmalloc(size_t size, int socket)
 {
 	return rte_zmalloc_socket(NULL, size, RTE_CACHE_LINE_SIZE, socket);

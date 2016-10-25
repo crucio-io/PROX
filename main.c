@@ -234,7 +234,7 @@ static void configure_if_tx_queues(struct task_args *targ, uint8_t socket)
 static void configure_if_rx_queues(struct task_args *targ, uint8_t socket)
 {
 	for (int i = 0; i < targ->nb_rxports; i++) {
-		uint8_t if_port = targ->rx_ports[i];
+		uint8_t if_port = targ->rx_port_queue[i].port;
 
 		if (if_port == OUT_DISCARD) {
 			return;
@@ -246,9 +246,9 @@ static void configure_if_rx_queues(struct task_args *targ, uint8_t socket)
 			prox_port_cfg[if_port].n_rxq = 0;
 		}
 
-		targ->rx_queues[i] = prox_port_cfg[if_port].n_rxq;
-		prox_port_cfg[if_port].pool[targ->rx_queues[i]] = targ->pool;
-		prox_port_cfg[if_port].pool_size[targ->rx_queues[i]] = targ->nb_mbuf - 1;
+		targ->rx_port_queue[i].queue = prox_port_cfg[if_port].n_rxq;
+		prox_port_cfg[if_port].pool[targ->rx_port_queue[i].queue] = targ->pool;
+		prox_port_cfg[if_port].pool_size[targ->rx_port_queue[i].queue] = targ->nb_mbuf - 1;
 		prox_port_cfg[if_port].n_rxq++;
 
 		int dsocket = prox_port_cfg[if_port].socket;
@@ -532,8 +532,8 @@ static void setup_mempools_unique_per_socket(void)
 		if ((!targ->mbuf_size_set_explicitely) && (targ->task_init->mbuf_size != 0)) {
 			targ->mbuf_size = targ->task_init->mbuf_size;
 		}
-		if (targ->rx_ports[0] != OUT_DISCARD) {
-			struct prox_port_cfg* port_cfg = &prox_port_cfg[targ->rx_ports[0]];
+		if (targ->rx_port_queue[0].port != OUT_DISCARD) {
+			struct prox_port_cfg* port_cfg = &prox_port_cfg[targ->rx_port_queue[0].port];
 			PROX_ASSERT(targ->nb_mbuf != 0);
 			mbuf_count[socket] += targ->nb_mbuf;
 			if (nb_cache_mbuf[socket] == 0)
@@ -578,7 +578,7 @@ static void setup_mempools_unique_per_socket(void)
 	while (core_targ_next_early(&lconf, &targ, 0) == 0) {
 		uint8_t socket = rte_lcore_to_socket_id(lconf->id);
 
-		if (targ->rx_ports[0] != OUT_DISCARD) {
+		if (targ->rx_port_queue[0].port != OUT_DISCARD) {
 			/* use this pool for the interface that the core is receiving from */
 			/* If one core receives from multiple ports, all the ports use the same mempool */
 			targ->pool = pool[socket];
@@ -593,7 +593,7 @@ static void setup_mempools_unique_per_socket(void)
 static void setup_mempool_for_rx_task(struct lcore_cfg *lconf, struct task_args *targ)
 {
 	const uint8_t socket = rte_lcore_to_socket_id(lconf->id);
-	struct prox_port_cfg *port_cfg = &prox_port_cfg[targ->rx_ports[0]];
+	struct prox_port_cfg *port_cfg = &prox_port_cfg[targ->rx_port_queue[0].port];
 	const struct rte_memzone *mz;
 	struct rte_mempool *mp = NULL;
 	uint32_t flags = 0;
@@ -682,7 +682,7 @@ static void setup_mempools_multiple_per_socket(void)
 	struct task_args *targ;
 
 	while (core_targ_next_early(&lconf, &targ, 0) == 0) {
-		if (targ->rx_ports[0] == OUT_DISCARD)
+		if (targ->rx_port_queue[0].port == OUT_DISCARD)
 			continue;
 		setup_mempool_for_rx_task(lconf, targ);
 	}
@@ -761,7 +761,7 @@ static void init_port_activate(void)
 	while (core_targ_next_early(&lconf, &targ, 0) == 0) {
 		printf("%p %p\n", lconf, targ);
 		for (int i = 0; i < targ->nb_rxports; i++) {
-			port_id = targ->rx_ports[i];
+			port_id = targ->rx_port_queue[i].port;
 			prox_port_cfg[port_id].active = 1;
 		}
 
@@ -829,7 +829,7 @@ static int setup_prox(int argc, char **argv)
 		init_rte_ring_dev();
 	init_rte_dev(prox_cfg.flags & DSF_USE_DUMMY_DEVICES);
 	plog_info("=== Calibrating TSC overhead ===\n");
-	prox_init_tsc_overhead();
+	clock_init();
 	plog_info("\tTSC running at %"PRIu64" Hz\n", rte_get_tsc_hz());
 
 	init_lcores();

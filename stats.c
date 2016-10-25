@@ -42,6 +42,8 @@
 #include "stats_global.h"
 #include "stats_core.h"
 #include "stats_task.h"
+#include "stats_prio_task.h"
+#include "stats_latency.h"
 
 /* Stores all readed values from the cores, displaying is done afterwards because
    displaying introduces overhead. If displaying was done right after the values
@@ -51,7 +53,9 @@ int last_stat; /* 0 or 1 to track latest 2 measurements */
 void stats_reset(void)
 {
 	stats_task_reset();
+	stats_prio_task_reset();
 	stats_port_reset();
+	stats_latency_reset();
 	stats_global_reset();
 }
 
@@ -59,6 +63,7 @@ void stats_init(unsigned avg_start, unsigned duration)
 {
 	stats_lcore_init();
 	stats_task_init();
+	stats_prio_task_init();
 	stats_port_init();
 	stats_mempool_init();
 	stats_latency_init();
@@ -67,13 +72,16 @@ void stats_init(unsigned avg_start, unsigned duration)
 	stats_global_init(avg_start, duration);
 }
 
-void stats_update(uint8_t flag_cons)
+void stats_update(uint16_t flag_cons)
 {
 	/* Keep track of last 2 measurements. */
 	last_stat = !last_stat;
 
 	if (flag_cons & STATS_CONS_F_TASKS)
 		stats_task_update();
+
+	if (flag_cons & STATS_CONS_F_PRIO_TASKS)
+		stats_prio_task_update();
 
 	if (flag_cons & STATS_CONS_F_LCORE)
 		stats_lcore_update();
@@ -98,6 +106,9 @@ void stats_update(uint8_t flag_cons)
 
 	if (flag_cons & STATS_CONS_F_TASKS)
 		stats_task_post_proc();
+
+	if (flag_cons & STATS_CONS_F_PRIO_TASKS)
+		stats_prio_task_post_proc();
 
 	if (flag_cons & STATS_CONS_F_GLOBAL)
 		stats_global_post_proc();

@@ -47,7 +47,6 @@ struct global_stats {
 
 extern int last_stat;
 static struct global_stats global_stats;
-static uint64_t tsc_hz;
 
 uint64_t stats_get_last_tsc(void)
 {

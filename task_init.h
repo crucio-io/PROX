@@ -52,7 +52,6 @@ struct lcore_cfg;
 
 #define TASK_ARG_DROP           0x01
 #define TASK_ARG_RX_RING        0x02
-#define TASK_ARG_INET_SIDE      0x04
 #define TASK_ARG_RTE_TABLE      0x08
 #define TASK_ARG_LOCAL_LPM      0x10
 #define TASK_ARG_QINQ_ACL       0x20
@@ -137,7 +136,6 @@ struct task_args {
 	uint8_t                nb_rxrings;
 	uint8_t                tot_rxrings;
 	uint8_t                nb_rxports;
-	uint8_t                rx_ports[PROX_MAX_PORTS];
 	uint32_t               byte_offset;
 	uint32_t               local_ipv4;
 	struct ipv6_addr       local_ipv6;    /* For IPv6 Tunnel, it's the local tunnel endpoint address */
@@ -147,7 +145,7 @@ struct task_args {
 	struct ether_addr      edaddr;
 	struct ether_addr      esaddr;
 	struct port_queue      tx_port_queue[PROX_MAX_PORTS];
-	uint8_t                rx_queues[PROX_MAX_PORTS];
+	struct port_queue      rx_port_queue[PROX_MAX_PORTS];
 	/* Used to set up actual task at initialization time. */
 	enum task_mode         mode;
 	/* Destination output position in hw or sw when using mac learned dest port. */
@@ -189,7 +187,7 @@ struct task_args {
 	uint8_t                lb_friend_core;
 	uint8_t                lb_friend_task;
 	/* gen related*/
-	uint64_t               rate_bps;
+	uint32_t               rate_bps;
 	uint32_t               n_rand_str;
 	char                   rand_str[64][64];
 	uint32_t               rand_offset[64];
@@ -222,6 +220,8 @@ struct task_args {
 	char                   dpi_engine_path[256];
 	char                   dpi_engine_args[16][256];
 	uint32_t               n_dpi_engine_args;
+	uint32_t               generator_id;
+	uint32_t               accuracy_limit_nsec;
 };
 
 /* Return the first port that is reachable through the task. If the

@@ -180,6 +180,7 @@ struct task_base_aux {
 	uint32_t tx_bucket[MAX_RING_BURST + 1];
 	void (*tx_pkt_orig)(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, uint8_t *out);
 	void (*tx_pkt_hw)(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, uint8_t *out);
+	uint16_t (*tx_pkt_try)(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts);
 	void (*stop)(struct task_base *tbase);
 	void (*start)(struct task_base *tbase);
 	void (*stop_last)(struct task_base *tbase);

@@ -33,6 +33,7 @@
 #include <rte_cycles.h>
 #include <rte_table_hash.h>
 #include <rte_lpm.h>
+#include <rte_version.h>
 
 #include "prox_lua.h"
 #include "prox_lua_types.h"
@@ -346,10 +347,11 @@ static void arp_update(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_
 
 		if (unlikely(ret)) {
 			plogx_err("Failed to add key %x, gre %x\n", key.ip, key.gre_id);
-			TASK_STATS_ADD_DROP_HANDLED(&task->base.aux->stats, 1);
+			TASK_STATS_ADD_DROP_DISCARD(&task->base.aux->stats, 1);
 		}
 
 		/* should do ARP reply */
+		TASK_STATS_ADD_DROP_HANDLED(&task->base.aux->stats, 1);
 		rte_pktmbuf_free(mbufs[j]);
 	}
 }
@@ -461,8 +463,12 @@ static inline uint8_t gre_encap_route(uint32_t src_ipv4, struct rte_mbuf *mbuf, 
 	struct ipv4_hdr *pip = &((struct cpe_pkt_delta *)packet)->pkt.ipv4_hdr;
 	uint16_t ip_len = rte_be_to_cpu_16(pip->total_length);
 
-	uint8_t next_hop_index;
 	/* returns 0 on success, returns -ENOENT of failure (or -EINVAL if first or last parameter is NULL) */
+#ifdef RTE_VER_YEAR
+	uint32_t next_hop_index;
+#else
+	uint8_t next_hop_index;
+#endif
 	if (unlikely(rte_lpm_lookup(task->ipv4_lpm, rte_bswap32(pip->dst_addr), &next_hop_index) != 0)) {
 		plog_warn("lpm_lookup failed for ip %x: rc = %d\n", rte_bswap32(pip->dst_addr), -ENOENT);
 		return ROUTE_ERR;
@@ -583,7 +589,7 @@ static uint8_t handle_qinq_decap4(struct task_qinq_decap4 *task, struct rte_mbuf
 				plog_warn("Failed to add ARP entry\n");
 				return OUT_DISCARD;
 			}
-			return OUT_DISCARD;
+			return OUT_HANDLED;
 		} else
 #endif
 		{
@@ -599,7 +605,7 @@ static uint8_t handle_qinq_decap4(struct task_qinq_decap4 *task, struct rte_mbuf
 					plog_warn("Failed to add ARP entry\n");
 					return OUT_DISCARD;
 				}
-				return OUT_DISCARD;
+				return OUT_HANDLED;
 			}
 #endif
 		}

@@ -142,7 +142,7 @@ void set_task_defaults(struct prox_cfg* prox_cfg, struct lcore_cfg* lcore_cfg_in
 		for (uint8_t task_id = 0; task_id < MAX_TASKS_PER_CORE; ++task_id) {
 			struct task_args *targ = &cur_lcore_cfg_init->targs[task_id];
 			for (uint8_t port_id = 0; port_id < PROX_MAX_PORTS; ++port_id) {
-				targ->rx_ports[port_id] = OUT_DISCARD;
+				targ->rx_port_queue[port_id].port = OUT_DISCARD;
 			}
 			targ->flags |= TASK_ARG_DROP;
 			targ->flags |= TASK_ARG_QINQ_ACL;
@@ -180,6 +180,7 @@ void set_task_defaults(struct prox_cfg* prox_cfg, struct lcore_cfg* lcore_cfg_in
 			targ->mbuf_size = MBUF_SIZE;
 			targ->n_pkts = 1024*64;
 			targ->runtime_flags |= TASK_TX_CRC;
+			targ->accuracy_limit_nsec = 5000;
 		}
 	}
 }

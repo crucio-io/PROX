@@ -123,6 +123,7 @@ CFLAGS += -Wno-unused-result
 
 SRCS-y := task_init.c
 
+SRCS-y += handle_aggregator.c
 SRCS-y += handle_nop.c
 SRCS-y += handle_irq.c
 SRCS-y += handle_arp.c
@@ -136,8 +137,11 @@ SRCS-y += handle_mplstag.c
 SRCS-y += handle_qinq_decap6.c
 
 # support for GRE encap/decap dropped in latest DPDK versions
+# year.month dpdk versions are shown here as .0
+ifneq ($(rte_ver_cur),.0)
 ifeq ($(lastword $(sort $(rte_ver_cur) 2.0)),2.0)
 SRCS-y += handle_gre_decap_encap.c
+endif
 endif
 
 SRCS-y += rw_reg.c
@@ -174,11 +178,13 @@ SRCS-$(CONFIG_RTE_LIBRTE_PIPELINE) += thread_pipeline.c
 SRCS-y += prox_args.c prox_cfg.c prox_cksum.c prox_port_cfg.c
 
 SRCS-y += cfgfile.c clock.c commands.c cqm.c msr.c defaults.c
-SRCS-y += display.c log.c hash_utils.c main.c parse_utils.c file_utils.c
+SRCS-y += display.c display_latency.c display_mempools.c
+SRCS-y += display_ports.c display_rings.c display_priority.c display_pkt_len.c display_l4gen.c display_tasks.c
+SRCS-y += log.c hash_utils.c main.c parse_utils.c file_utils.c
 SRCS-y += run.c input_conn.c input_curses.c
 SRCS-y += rx_pkt.c lconf.c tx_pkt.c expire_cpe.c ip_subnet.c
 SRCS-y += stats_port.c stats_mempool.c stats_ring.c stats_l4gen.c
-SRCS-y += stats_latency.c stats_global.c stats_core.c stats_task.c
+SRCS-y += stats_latency.c stats_global.c stats_core.c stats_task.c stats_prio.c
 SRCS-y += cmd_parser.c input.c prox_shared.c prox_lua_types.c
 SRCS-y += genl4_bundle.c heap.c genl4_stream_tcp.c genl4_stream_udp.c cdf.c
 SRCS-y += stats.c stats_cons_log.c stats_parser.c hash_set.c prox_lua.c prox_malloc.c

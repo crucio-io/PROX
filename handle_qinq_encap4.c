@@ -284,9 +284,9 @@ void init_qinq_gre_table(struct task_args *targ, struct qinq_gre_map *qinq_gre_m
 		if (targ->nb_slave_threads) {
 			nb_worker_threads = targ->nb_slave_threads;
 			worker_thread_id = targ->worker_thread_id;
-		} else if (prox_port_cfg[targ->rx_ports[0]].n_rxq) {
-			nb_worker_threads = prox_port_cfg[targ->rx_ports[0]].n_rxq;
-			worker_thread_id = targ->rx_queues[0];
+		} else if (prox_port_cfg[targ->rx_port_queue[0].port].n_rxq) {
+			nb_worker_threads = prox_port_cfg[targ->rx_port_queue[0].port].n_rxq;
+			worker_thread_id = targ->rx_port_queue[0].queue;
 		} else {
 			plog_err("Unexpected: unknown number of worker thread\n");
 			exit(EXIT_FAILURE);
@@ -573,9 +573,9 @@ static void flow_iter_next(struct flow_iter *iter, struct task_args *targ)
 			if (targ->nb_slave_threads) {
 				nb_worker_threads = targ->nb_slave_threads;
 				worker_thread_id = targ->worker_thread_id;
-			} else if (prox_port_cfg[targ->rx_ports[0]].n_rxq) {
-				nb_worker_threads = prox_port_cfg[targ->rx_ports[0]].n_rxq;
-				worker_thread_id = targ->rx_queues[0];
+			} else if (prox_port_cfg[targ->rx_port_queue[0].port].n_rxq) {
+				nb_worker_threads = prox_port_cfg[targ->rx_port_queue[0].port].n_rxq;
+				worker_thread_id = targ->rx_port_queue[0].queue;
 			} else {
 				plog_err("Unexpected: unknown number of worker thread\n");
 			}

@@ -32,6 +32,7 @@
 #include <rte_cycles.h>
 #include <rte_port_ethdev.h>
 #include <rte_port_ring.h>
+#include <rte_version.h>
 
 #include "log.h"
 #include "quit.h"
@@ -118,7 +119,9 @@ void init_pipe_create_in_out(struct task_pipe *tpipe, struct task_args *targ)
 				.ops = &rte_port_ring_writer_ops,
 				.arg_create = &port_ring_params,
 				.f_action = NULL,	//TODO
+#ifndef RTE_VER_YEAR
 				.f_action_bulk = NULL,	//TODO
+#endif
 				.arg_ah = NULL,
 			};
 			err = rte_pipeline_port_out_create(tpipe->p,
@@ -141,7 +144,9 @@ void init_pipe_create_in_out(struct task_pipe *tpipe, struct task_args *targ)
 				.ops = &rte_port_ethdev_writer_ops,
 				.arg_create = &port_ethdev_params,
 				.f_action = NULL,	//TODO
+#ifndef RTE_VER_YEAR
 				.f_action_bulk = NULL,	//TODO
+#endif
 				.arg_ah = NULL,
 			};
 			err = rte_pipeline_port_out_create(tpipe->p,

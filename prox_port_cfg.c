@@ -175,6 +175,19 @@ void init_rte_dev(int use_dummy_devices)
 		snprintf(port_cfg->pci_addr, sizeof(port_cfg->pci_addr),
 			 "%04x:%02x:%02x.%1x", dev_info.pci_dev->addr.domain, dev_info.pci_dev->addr.bus, dev_info.pci_dev->addr.devid, dev_info.pci_dev->addr.function);
 		strncpy(port_cfg->driver_name, dev_info.driver_name, sizeof(port_cfg->driver_name));
+
+		strncpy(port_cfg->short_name, prox_port_cfg[port_id].driver_name, sizeof(port_cfg->type));
+
+		if (strncmp(port_cfg->driver_name, "rte_", 4) == 0) {
+			strncpy(port_cfg->short_name, prox_port_cfg[port_id].driver_name + 4, sizeof(port_cfg->short_name));
+		} else {
+			strncpy(port_cfg->short_name, prox_port_cfg[port_id].driver_name, sizeof(port_cfg->short_name));
+		}
+		char *ptr;
+		if ((ptr = strstr(port_cfg->short_name, "_pmd")) != NULL) {
+			*ptr = '\x0';
+		}
+
 		/* Try to find the device's numa node */
 		char buf[1024];
 		snprintf(buf, sizeof(buf), "/sys/bus/pci/devices/%s/numa_node", port_cfg->pci_addr);

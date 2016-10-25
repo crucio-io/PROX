@@ -51,9 +51,9 @@ SOURCES += programconfig.cpp
 
 BUILD_DIR = build
 OBJECTS = $(SOURCES:%.cpp=$(BUILD_DIR)/%.o)
-PROG = flowextract2
+PROG = flowextract
 
-CXXFLAGS += -g -O2 -Wall -ansi -pedantic -Wno-unused -msse4.2
+CXXFLAGS += -D__STDC_LIMIT_MACROS -g -O2 -Wall -ansi -pedantic -Wno-unused -msse4.2
 LDFLAGS = -lpcap
 
 $(BUILD_DIR)/$(PROG): $(OBJECTS)

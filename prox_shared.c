@@ -29,6 +29,7 @@
   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+#include <stdio.h>
 #include <rte_hash.h>
 #include <rte_hash_crc.h>
 #include <rte_version.h>

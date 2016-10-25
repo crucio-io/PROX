@@ -77,7 +77,6 @@ struct prox_cfg {
 	int32_t         cpe_table_ports[PROX_MAX_PORTS];
 	uint32_t	logbuf_size;
 	uint32_t	logbuf_pos;
-	uint32_t	pps_unit;
 	char		*logbuf;
 };
 

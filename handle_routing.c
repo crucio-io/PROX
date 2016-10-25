@@ -210,7 +210,7 @@ static uint8_t route_ipv4(struct task_routing *task, uint8_t *beg, uint32_t ip_o
 {
 	struct ipv4_hdr *ip = (struct ipv4_hdr*)(beg + ip_offset);
 	struct ether_hdr *peth_out;
-	uint8_t tx_port, next_hop_index;
+	uint8_t tx_port;
 	uint32_t dst_ip;
 
 	if (unlikely(ip->version_ihl >> 4 != 4)) {
@@ -235,6 +235,11 @@ static uint8_t route_ipv4(struct task_routing *task, uint8_t *beg, uint32_t ip_o
 		return OUT_DISCARD;
 	}
 
+#ifdef RTE_VER_YEAR
+	uint32_t next_hop_index;
+#else
+	uint8_t next_hop_index;
+#endif
 	if (unlikely(rte_lpm_lookup(task->ipv4_lpm, rte_bswap32(dst_ip), &next_hop_index) != 0)) {
 		uint8_t* dst_ipp = (uint8_t*)&dst_ip;
 		plog_warn("lpm_lookup failed for ip %d.%d.%d.%d: rc = %d\n",

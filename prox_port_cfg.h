@@ -59,6 +59,7 @@ struct prox_port_cfg {
 	enum addr_type    type;
 	struct ether_addr eth_addr;    /* port MAC address */
 	char name[MAX_NAME_SIZE];
+	char short_name[MAX_NAME_SIZE];
 	char driver_name[MAX_NAME_SIZE];
 	char rx_ring[MAX_NAME_SIZE];
 	char tx_ring[MAX_NAME_SIZE];

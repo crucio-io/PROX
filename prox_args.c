@@ -533,6 +533,7 @@ struct cfg_depr task_cfg_depr[] = {
 struct cfg_depr core_cfg_depr[] = {
 	{"do sig", ""},
 	{"lat", ""},
+	{"network side", ""},
 };
 
 /* [core] parser */
@@ -763,7 +764,7 @@ static int get_core_cfg(unsigned sindex, char *str, void *data)
 	if (STR_EQ(str, "rx ring")) {
 		uint32_t val;
 		int err = parse_bool(&val, pkey);
-		if (!err && val && targ->rx_ports[0] != OUT_DISCARD) {
+		if (!err && val && targ->rx_port_queue[0].port != OUT_DISCARD) {
 			set_errf("Can't read both from internal ring and external port from the same task. Use multiple tasks instead.");
 			return -1;
 		}
@@ -811,7 +812,7 @@ static int get_core_cfg(unsigned sindex, char *str, void *data)
 		return parse_flag(&targ->flags, TASK_ARG_QINQ_ACL, pkey);
 	}
 	if (STR_EQ(str, "bps")) {
-		return parse_bigint(&targ->rate_bps, pkey);
+		return parse_int(&targ->rate_bps, pkey);
 	}
 	if (STR_EQ(str, "random")) {
 		return parse_str(targ->rand_str[targ->n_rand_str++], pkey, sizeof(targ->rand_str[0]));
@@ -888,6 +889,9 @@ static int get_core_cfg(unsigned sindex, char *str, void *data)
 
 		return 0;
 	}
+	if (STR_EQ(str, "accuracy limit nsec")) {
+		return parse_int(&targ->accuracy_limit_nsec, pkey);
+	}
 	if (STR_EQ(str, "latency bucket size")) {
 		return parse_int(&targ->bucket_size, pkey);
 	}
@@ -936,7 +940,7 @@ static int get_core_cfg(unsigned sindex, char *str, void *data)
 
                 for (uint8_t i = 0; i < n_if; ++i) {
 			PROX_ASSERT(vals[i] < PROX_MAX_PORTS);
-                        targ->rx_ports[i] = vals[i];
+                        targ->rx_port_queue[i].port = vals[i];
                         targ->nb_rxports++;
                 }
 		return 0;
@@ -982,10 +986,6 @@ static int get_core_cfg(unsigned sindex, char *str, void *data)
 	}
 	if (STR_EQ(str, "users")) {
 		return parse_int(&targ->n_flows, pkey);
-	}
-
-	if (STR_EQ(str, "network side")) {
-		return parse_flag(&targ->flags, TASK_ARG_INET_SIDE, pkey);
 	}
 
 	if (STR_EQ(str, "mark")) {

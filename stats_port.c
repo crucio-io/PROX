@@ -131,12 +131,22 @@ static struct port_stats   port_stats[PROX_MAX_PORTS];
 static uint8_t nb_interface;
 static uint8_t n_ports;
 static int num_ixgbe_xstats = 0;
+
+#ifdef RTE_VER_YEAR
+#define XSTATS_SUPPORT 1
+#else
 #if RTE_VERSION >= RTE_VERSION_NUM(2,1,0,0) && RTE_VER_PATCH_RELEASE >= 1
+#define XSTATS_SUPPORT 1
+#else
+#define XSTATS_SUPPORT 0
+#endif
+#endif
+
+#ifdef XSTATS_SUPPORT
 static struct rte_eth_xstats *eth_xstats = NULL;
 static int xstat_tpr_offset = -1, xstat_tor_offset = -1;
 static int tx_pkt_size_offset[PKT_SIZE_COUNT] = {-1,-1,-1,-1,-1, -1};
 #endif
-
 static int find_xstats_str(struct rte_eth_xstats *xstats, int n, const char *name)
 {
 	for (int i = 0; i < n; i++) {
@@ -149,10 +159,10 @@ static int find_xstats_str(struct rte_eth_xstats *xstats, int n, const char *nam
 
 void stats_port_init(void)
 {
+#ifdef XSTATS_SUPPORT
 	nb_interface = prox_last_port_active() + 1;
 	n_ports = prox_nb_active_ports();
 
-#if RTE_VERSION >= RTE_VERSION_NUM(2,1,0,0) && RTE_VER_PATCH_RELEASE >= 1
 	for (uint8_t port_id = 0; port_id < nb_interface; ++port_id) {
 		if (!strcmp(prox_port_cfg[port_id].driver_name, "rte_ixgbe_pmd") && prox_port_cfg[port_id].active) {
 			num_ixgbe_xstats = rte_eth_xstats_get(port_id, NULL, 0);
@@ -217,7 +227,7 @@ static void nic_read_stats(uint8_t port_id)
 	   overhead) received by the host. */
 
 	if (is_ixgbe) {
-#if RTE_VERSION >= RTE_VERSION_NUM(2,1,0,0) && RTE_VER_PATCH_RELEASE >= 1
+#ifdef XSTATS_SUPPORT
 		if (num_ixgbe_xstats) {
 			rte_eth_xstats_get(port_id, eth_xstats, num_ixgbe_xstats);
 

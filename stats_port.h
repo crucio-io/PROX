@@ -32,6 +32,8 @@
 #ifndef _STATS_PORT_H_
 #define _STATS_PORT_H_
 
+#include <inttypes.h>
+
 enum PKT_SIZE_BIN {
 	PKT_SIZE_64,
 	PKT_SIZE_65,

@@ -50,7 +50,7 @@
 #define MAX_NB_PORT_NAMES PROX_MAX_PORTS
 #define MAX_LEN_PORT_NAME 24
 #define MAX_LEN_VAR_NAME  24
-#define MAX_LEN_VAL       256
+#define MAX_LEN_VAL       512
 #define MAX_NB_VARS       32
 
 /* The CPU topology of the system is used to parse "socket
@@ -983,23 +983,6 @@ int parse_flag(uint32_t* val, uint32_t flag, const char *str2)
 		*val |= flag;
 	else
 		*val &= ~flag;
-
-	return 0;
-}
-
-int parse_bigint(uint64_t* val, const char *str2)
-{
-	char str[MAX_STR_LEN_PROC];
-
-	if (parse_vars(str, sizeof(str), str2))
-		return -1;
-
-	int64_t tmp = strtol(str, 0, 0);
-	if (tmp < 0) {
-		set_errf("Integer is negative");
-		return -2;
-	}
-	*val = tmp;
 
 	return 0;
 }

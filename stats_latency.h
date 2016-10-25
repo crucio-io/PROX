@@ -34,35 +34,35 @@
 
 #include <inttypes.h>
 
-struct task_lat;
+#include "handle_lat.h"
 
-struct task_lat_stats {
-	struct task_lat *task;
-	uint8_t lcore_id;
-	uint8_t task_id;
-	char rx_name[2]; /* Currently only one */
+struct stats_latency {
+	struct time_unit_err avg;
+	struct time_unit_err min;
+	struct time_unit_err max;
+	struct time_unit_err stddev;
+
+	struct time_unit accuracy_limit;
+	uint64_t         lost_packets;
+	uint64_t         tot_packets;
+	uint64_t         tot_all_packets;
 };
 
-struct lat_test *stats_get_lat_stats(uint32_t i);
-struct task_lat_stats *stats_get_task_lats(uint32_t i);
-struct task_l4_stats *stats_get_l4_stats(uint32_t i);
-struct l4_stats_sample *stats_get_l4_stats_sample(uint32_t i, int l);
+uint32_t stats_latency_get_core_id(uint32_t i);
+uint32_t stats_latency_get_task_id(uint32_t i);
+struct stats_latency *stats_latency_get(uint32_t i);
+struct stats_latency *stats_latency_find(uint32_t lcore_id, uint32_t task_id);
 
-int stats_get_n_latency(void);
+struct stats_latency *stats_latency_tot_get(uint32_t i);
+struct stats_latency *stats_latency_tot_find(uint32_t lcore_id, uint32_t task_id);
+
 void stats_latency_init(void);
 void stats_latency_update(void);
+void stats_latency_reset(void);
 
-uint64_t stats_core_task_lat_min(uint8_t lcore_id, uint8_t task_id);
-uint64_t stats_core_task_lat_max(uint8_t lcore_id, uint8_t task_id);
-uint64_t stats_core_task_tot_lat_min(uint8_t lcore_id, uint8_t task_id);
-uint64_t stats_core_task_tot_lat_max(uint8_t lcore_id, uint8_t task_id);
-uint64_t stats_core_task_lat_avg(uint8_t lcore_id, uint8_t task_id);
-void lat_stats_reset(void);
+int stats_get_n_latency(void);
 
-#ifdef LATENCY_PER_PACKET
-void stats_core_lat(uint8_t lcore_id, uint8_t task_id, unsigned int *npackets, uint64_t *lat);
-#endif
-#ifdef LATENCY_DETAILS
+#ifdef LATENCY_HISTOGRAM
 void stats_core_lat_histogram(uint8_t lcore_id, uint8_t task_id, uint64_t **buckets);
 #endif
 

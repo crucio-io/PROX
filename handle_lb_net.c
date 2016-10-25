@@ -195,8 +195,8 @@ static void init_task_lb_net(struct task_base *tbase, struct task_args *targ)
 
 	task->qinq_tag = targ->qinq_tag;
 	task->runtime_flags = targ->runtime_flags;
-	task->worker_byte_offset_ipv6 = targ->flags & TASK_ARG_INET_SIDE ? 39 : 23;
-	task->worker_byte_offset_ipv4 = targ->flags & TASK_ARG_INET_SIDE ? 19 : 15;
+	task->worker_byte_offset_ipv6 = 23;
+	task->worker_byte_offset_ipv4 = 15;
 	task->nb_worker_threads       = targ->nb_worker_threads;
 	/* The optimal configuration is when the number of worker threads
 	   is a power of 2. In that case, a bit_mask can be used. Setting

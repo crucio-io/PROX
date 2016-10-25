@@ -67,8 +67,8 @@ int stream_udp_proc(struct stream_ctx *ctx, struct rte_mbuf *mbuf, struct l4_met
 			return -1;
 		}
 		/* With specific payload */
-		if (memcmp(ctx->stream_cfg->data[peer].content + ctx->cur_pos[peer], l4_meta->payload, l4_meta->len) != 0) {
-			plogx_dbg("Bad payload at action_id %d\n", ctx->cur_action);
+		if (memcmp(ctx->stream_cfg->data[peer].content + ctx->stream_cfg->actions[ctx->cur_action].beg, l4_meta->payload, l4_meta->len) != 0) {
+			plogx_dbg("Bad payload at action_id %d, with peer = %d and pos = %d and len=%d\n", ctx->cur_action, peer, ctx->cur_pos[peer], l4_meta->len);
 			return -1;
 		}
 		ctx->cur_pos[peer] += l4_meta->len;

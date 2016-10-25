@@ -160,8 +160,8 @@ static size_t init_rx_tx_rings_ports(struct task_args *targ, struct task_base *t
 	else {
 		if (targ->nb_rxports == 1) {
 			tbase->rx_pkt = (targ->task_init->flag_features & TASK_FEATURE_MULTI_RX)? rx_pkt_hw1_multi : rx_pkt_hw1;
-			tbase->rx_params_hw1.rx_pq.port =  targ->rx_ports[0];
-			tbase->rx_params_hw1.rx_pq.queue = targ->rx_queues[0];
+			tbase->rx_params_hw1.rx_pq.port =  targ->rx_port_queue[0].port;
+			tbase->rx_params_hw1.rx_pq.queue = targ->rx_port_queue[0].queue;
 		}
 		else {
 			PROX_ASSERT((targ->nb_rxports != 0) || (targ->task_init->flag_features & TASK_FEATURE_NO_RX));
@@ -170,8 +170,8 @@ static size_t init_rx_tx_rings_ports(struct task_args *targ, struct task_base *t
 			tbase->rx_params_hw.rx_pq = (struct port_queue *)(((uint8_t *)tbase) + offset);
 			offset += sizeof(struct port_queue) * tbase->rx_params_hw.nb_rxports;
 			for (int i = 0; i< targ->nb_rxports; i++) {
-				tbase->rx_params_hw.rx_pq[i].port = targ->rx_ports[i];
-				tbase->rx_params_hw.rx_pq[i].queue = targ->rx_queues[i];
+				tbase->rx_params_hw.rx_pq[i].port = targ->rx_port_queue[i].port;
+				tbase->rx_params_hw.rx_pq[i].queue = targ->rx_port_queue[i].queue;
 			}
 
 			if (rte_is_power_of_2(targ->nb_rxports)) {
@@ -336,6 +336,13 @@ struct task_base *init_task_struct(struct task_args *targ)
 	tbase->aux->stop_last = t->stop_last;
 	if ((targ->nb_txrings != 0) && (targ->nb_txports == 1)) {
 		tbase->aux->tx_pkt_hw = tx_pkt_no_drop_never_discard_hw1_no_pointer;
+	}
+	if (targ->tx_opt_ring) {
+		tbase->aux->tx_pkt_try = tx_try_self;
+	} else if (targ->nb_txrings == 1) {
+		tbase->aux->tx_pkt_try = tx_try_sw1;
+	} else if (targ->nb_txports) {
+		tbase->aux->tx_pkt_try = tx_try_hw1;
 	}
 
 	return tbase;

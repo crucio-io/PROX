@@ -91,7 +91,7 @@ static void update_link_states(void)
 
 static struct stats_cons stats_cons[8];
 static size_t n_stats_cons = 0;
-static uint8_t stats_cons_flags = 0;
+static uint16_t stats_cons_flags = 0;
 
 static void stats_cons_add(struct stats_cons *sc)
 {
@@ -148,6 +148,23 @@ static void multiplexed_input_stats(uint64_t deadline)
 	}
 }
 
+static void print_warnings(void)
+{
+	if (get_n_warnings() == -1) {
+		plog_info("Warnings disabled\n");
+	}
+	else if (get_n_warnings() > 0) {
+		int n_print = get_n_warnings() < 5? get_n_warnings(): 5;
+		plog_info("Started with %d warnings, last %d warnings: \n", get_n_warnings(), n_print);
+		for (int i = -n_print + 1; i <= 0; ++i) {
+			plog_info("%s", get_warning(i));
+		}
+	}
+	else {
+		plog_info("Started without warnings\n");
+	}
+}
+
 /* start main loop */
 void __attribute__((noreturn)) run(uint32_t flags)
 {
@@ -195,6 +212,9 @@ void __attribute__((noreturn)) run(uint32_t flags)
 
 	update_interval = str_to_tsc(prox_cfg.update_interval_str);
 	next_update = cur_tsc + update_interval;
+
+	cmd_rx_tx_info();
+	print_warnings();
 
 	while (stop_prox == 0) {
 

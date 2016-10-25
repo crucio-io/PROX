@@ -946,12 +946,20 @@ static void init_task_gen(struct task_base *tbase, struct task_args *targ)
 	task->fqueue = fqueue_create(queue_size, socket_id);
 	PROX_PANIC(task->fqueue == NULL, "Failed to allocate local queue\n");
 
-	PROX_PANIC(targ->nb_txports != 1, "Need exactly one TX port for L4 generation\n");
+	uint32_t n_descriptors;
+
+	if (targ->nb_txports) {
+		PROX_PANIC(targ->nb_txports != 1, "Need exactly one TX port for L4 generation\n");
+		n_descriptors = prox_port_cfg[targ->tx_port_queue[0].port].n_txd;
+	} else {
+		PROX_PANIC(targ->nb_txrings != 1, "Need exactly one TX ring for L4 generation\n");
+		n_descriptors = 256;
+	}
 
 	struct token_time_cfg tt_cfg = {
 		.bpp = targ->rate_bps,
 		.period = rte_get_tsc_hz(),
-		.bytes_max = prox_port_cfg[targ->tx_port_queue[0].port].n_txd * (ETHER_MIN_LEN + 20),
+		.bytes_max = n_descriptors * (ETHER_MIN_LEN + 20),
 	};
 
 	token_time_init(&task->token_time, &tt_cfg);

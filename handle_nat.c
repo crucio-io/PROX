@@ -51,10 +51,6 @@
 #include "log.h"
 #include "prox_port_cfg.h"
 
-#ifndef RTE_CACHE_LINE_SIZE
-#define RTE_CACHE_LINE_SIZE CACHE_LINE_SIZE
-#endif
-
 struct task_nat {
 	struct task_base base;
 	struct rte_hash  *hash;

@@ -32,6 +32,23 @@
 #ifndef _HANDLE_GEN_H_
 #define _HANDLE_GEN_H_
 
+struct unique_id {
+	uint8_t  generator_id;
+	uint32_t packet_id;
+} __attribute__((packed));
+
+static void unique_id_init(struct unique_id *unique_id, uint8_t generator_id, uint32_t packet_id)
+{
+	unique_id->generator_id = generator_id;
+	unique_id->packet_id = packet_id;
+}
+
+static void unique_id_get(struct unique_id *unique_id, uint8_t *generator_id, uint32_t *packet_id)
+{
+	*generator_id = unique_id->generator_id;
+	*packet_id = unique_id->packet_id;
+}
+
 struct task_base;
 
 void task_gen_set_pkt_count(struct task_base *tbase, uint32_t count);

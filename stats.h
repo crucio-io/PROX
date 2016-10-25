@@ -41,6 +41,6 @@
 
 void stats_reset(void);
 void stats_init(unsigned avg_start, unsigned duration);
-void stats_update(uint8_t flag_cons);
+void stats_update(uint16_t flag_cons);
 
 #endif /* _STATS_H_ */

@@ -37,10 +37,6 @@
 #include "prox_malloc.h"
 #include "cdf.h"
 
-#ifndef RTE_CACHE_LINE_SIZE
-#define RTE_CACHE_LINE_SIZE CACHE_LINE_SIZE
-#endif
-
 static uint32_t round_pow2(uint32_t val)
 {
 	uint32_t ret;

@@ -35,27 +35,27 @@
 #include "prox_cfg.h"
 #include "prox_args.h"
 
-struct lat_stats {
+struct stats_latency_manager_entry {
+	struct task_lat        *task;
+	uint8_t                lcore_id;
+	uint8_t                task_id;
 	struct lat_test        lat_test;
-	uint64_t               tot_max_lat;
-	uint64_t               tot_min_lat;
+	struct lat_test        tot_lat_test;
+	struct stats_latency   stats;
+	struct stats_latency   tot;
 };
 
 struct stats_latency_manager {
 	uint16_t n_latency;
-	uint64_t tsc_hz;
-	struct task_lat_stats *task_lats;
-	struct lat_stats        lat_stats[0]; /* copy of stats when running update stats. */
+	struct stats_latency_manager_entry entries[0]; /* copy of stats when running update stats. */
 };
 
 static struct stats_latency_manager *slm;
 
-void lat_stats_reset(void)
+void stats_latency_reset(void)
 {
-	for (uint16_t i = 0; i < slm->n_latency; ++i) {
-		slm->lat_stats[i].tot_max_lat = 0;
-		slm->lat_stats[i].tot_min_lat = -1;
-        }
+	for (uint16_t i = 0; i < slm->n_latency; ++i)
+		lat_test_reset(&slm->entries[i].tot_lat_test);
 }
 
 int stats_get_n_latency(void)
@@ -63,14 +63,58 @@ int stats_get_n_latency(void)
 	return slm->n_latency;
 }
 
-struct lat_test *stats_get_lat_stats(uint32_t i)
+uint32_t stats_latency_get_core_id(uint32_t i)
 {
-	return &slm->lat_stats[i].lat_test;
+	return slm->entries[i].lcore_id;
 }
 
-struct task_lat_stats *stats_get_task_lats(uint32_t i)
+uint32_t stats_latency_get_task_id(uint32_t i)
 {
-	return &slm->task_lats[i];
+	return slm->entries[i].task_id;
+}
+
+struct stats_latency *stats_latency_get(uint32_t i)
+{
+	return &slm->entries[i].stats;
+}
+
+struct stats_latency *stats_latency_tot_get(uint32_t i)
+{
+	return &slm->entries[i].tot;
+}
+
+static struct stats_latency_manager_entry *stats_latency_entry_find(uint8_t lcore_id, uint8_t task_id)
+{
+	struct stats_latency_manager_entry *entry;
+
+	for (uint16_t i = 0; i < stats_get_n_latency(); ++i) {
+		entry = &slm->entries[i];
+
+		if (entry->lcore_id == lcore_id && entry->task_id == task_id) {
+			return entry;
+		}
+	}
+	return NULL;
+}
+
+struct stats_latency *stats_latency_tot_find(uint32_t lcore_id, uint32_t task_id)
+{
+	struct stats_latency_manager_entry *entry = stats_latency_entry_find(lcore_id, task_id);
+
+	if (!entry)
+		return NULL;
+	else
+		return &entry->tot;
+}
+
+struct stats_latency *stats_latency_find(uint32_t lcore_id, uint32_t task_id)
+{
+	struct stats_latency_manager_entry *entry = stats_latency_entry_find(lcore_id, task_id);
+
+	if (!entry)
+		return NULL;
+	else
+		return &entry->stats;
 }
 
 static int task_runs_observable_latency(struct task_args *targ)
@@ -100,26 +144,19 @@ static struct stats_latency_manager *alloc_stats_latency_manager(void)
 				++n_latency;
 		}
 	}
-	mem_size = sizeof(struct stats_latency_manager) + sizeof(struct lat_stats) * n_latency;
+	mem_size = sizeof(*ret) + sizeof(ret->entries[0]) * n_latency;
 
 	ret = prox_zmalloc(mem_size, socket_id);
-	ret->task_lats = prox_zmalloc(sizeof(*ret->task_lats) * n_latency, socket_id);
 	return ret;
 }
 
 static void stats_latency_add_task(struct lcore_cfg *lconf, struct task_args *targ)
 {
-	if (targ->nb_rxports == 1) {
-		sprintf(slm->task_lats[slm->n_latency].rx_name, "%d", targ->rx_ports[0]);
-	} else if (targ->nb_rxrings == 1) {
-		if (targ->rx_rings[0])
-			strncpy(slm->task_lats[slm->n_latency].rx_name, targ->rx_rings[0]->name, 2);
-	}
+	struct stats_latency_manager_entry *new_entry = &slm->entries[slm->n_latency];
 
-	slm->task_lats[slm->n_latency].task = (struct task_lat *)targ->tbase;
-	slm->task_lats[slm->n_latency].lcore_id = lconf->id;
-	slm->task_lats[slm->n_latency].task_id = targ->id;
-	slm->lat_stats[slm->n_latency].tot_min_lat = -1;
+	new_entry->task = (struct task_lat *)targ->tbase;
+	new_entry->lcore_id = lconf->id;
+	new_entry->task_id = targ->id;
 	slm->n_latency++;
 }
 
@@ -127,10 +164,8 @@ void stats_latency_init(void)
 {
 	struct lcore_cfg *lconf = NULL;
 	struct task_args *targ;
-	uint32_t lcore_id = -1;
 
 	slm = alloc_stats_latency_manager();
-	slm->tsc_hz = rte_get_tsc_hz();
 
 	while (core_targ_next(&lconf, &targ, 0) == 0) {
 		if (task_runs_observable_latency(targ))
@@ -138,202 +173,68 @@ void stats_latency_init(void)
 	}
 }
 
-uint64_t stats_core_task_lat_min(uint8_t lcore_id, uint8_t task_id)
+#ifdef LATENCY_HISTOGRAM
+void stats_core_lat_histogram(uint8_t lcore_id, uint8_t task_id, uint64_t **buckets)
 {
-	struct task_lat_stats *s;
-	struct lat_test *lat_test;
+	struct stats_latency_manager_entry *lat_stats;
+	uint64_t tsc;
 
-	for (uint16_t i = 0; i < stats_get_n_latency(); ++i) {
-		s = &slm->task_lats[i];
+	lat_stats = stats_latency_entry_find(lcore_id, task_id);
 
-		if (s->lcore_id == lcore_id && s->task_id == task_id) {
-			lat_test = &slm->lat_stats[i].lat_test;
-
-			if ((lat_test->min_lat << LATENCY_ACCURACY) < UINT64_MAX/1000000) {
-				return (lat_test->min_lat << LATENCY_ACCURACY)*1000000/slm->tsc_hz;
-			}
-			else {
-				return (lat_test->min_lat << LATENCY_ACCURACY)/(slm->tsc_hz/1000000);
-			}
-		}
-	}
-
-	return 0;
-}
-
-uint64_t stats_core_task_lat_max(uint8_t lcore_id, uint8_t task_id)
-{
-	struct task_lat_stats *s;
-	struct lat_test *lat_test;
-
-	for (uint16_t i = 0; i < stats_get_n_latency(); ++i) {
-		s = &slm->task_lats[i];
-		if (s->lcore_id == lcore_id && s->task_id == task_id) {
-			lat_test = &slm->lat_stats[i].lat_test;
-
-			if ((lat_test->max_lat << LATENCY_ACCURACY) < UINT64_MAX/1000000) {
-				return (lat_test->max_lat<<LATENCY_ACCURACY)*1000000/slm->tsc_hz;
-			}
-			else {
-				return (lat_test->max_lat<<LATENCY_ACCURACY)/(slm->tsc_hz/1000000);
-			}
-		}
-	}
-
-	return 0;
-}
-
-uint64_t stats_core_task_tot_lat_min(uint8_t lcore_id, uint8_t task_id)
-{
-	struct task_lat_stats *s;
-	struct lat_stats *lat_stat;
-
-	for (uint16_t i = 0; i < stats_get_n_latency(); ++i) {
-		s = &slm->task_lats[i];
-
-		if (s->lcore_id == lcore_id && s->task_id == task_id) {
-			lat_stat = &slm->lat_stats[i];
-
-			if ((lat_stat->tot_min_lat << LATENCY_ACCURACY) < UINT64_MAX/1000000) {
-				return (lat_stat->tot_min_lat << LATENCY_ACCURACY)*1000000/slm->tsc_hz;
-			}
-			else {
-				return (lat_stat->tot_min_lat << LATENCY_ACCURACY)/(slm->tsc_hz/1000000);
-			}
-		}
-	}
-
-	return 0;
-}
-
-uint64_t stats_core_task_tot_lat_max(uint8_t lcore_id, uint8_t task_id)
-{
-	struct task_lat_stats *s;
-	struct lat_stats *lat_stat;
-
-	for (uint16_t i = 0; i < stats_get_n_latency(); ++i) {
-		s = &slm->task_lats[i];
-		if (s->lcore_id == lcore_id && s->task_id == task_id) {
-			lat_stat = &slm->lat_stats[i];
-
-			if ((lat_stat->tot_max_lat << LATENCY_ACCURACY) < UINT64_MAX/1000000) {
-				return (lat_stat->tot_max_lat<<LATENCY_ACCURACY)*1000000/slm->tsc_hz;
-			}
-			else {
-				return (lat_stat->tot_max_lat<<LATENCY_ACCURACY)/(slm->tsc_hz/1000000);
-			}
-		}
-	}
-
-	return 0;
-}
-
-uint64_t stats_core_task_lat_avg(uint8_t lcore_id, uint8_t task_id)
-{
-	struct task_lat_stats *s;
-	struct lat_test *lat_test;
-
-	for (uint16_t i = 0; i < slm->n_latency; ++i) {
-		s = &slm->task_lats[i];
-		if (s->lcore_id == lcore_id && s->task_id == task_id) {
-			lat_test = &slm->lat_stats[i].lat_test;
-
-			if (!lat_test->tot_pkts) {
-				return 0;
-			}
-			if ((lat_test->tot_lat << LATENCY_ACCURACY) < UINT64_MAX/1000000) {
-				return (lat_test->tot_lat<<LATENCY_ACCURACY)*1000000/(lat_test->tot_pkts*slm->tsc_hz);
-			}
-			else {
-				return (lat_test->tot_lat<<LATENCY_ACCURACY)/(lat_test->tot_pkts*slm->tsc_hz/1000000);
-			}
-		}
-	}
-	return 0;
-}
-
-#ifdef LATENCY_PER_PACKET
-void stats_core_lat(uint8_t lcore_id, uint8_t task_id, unsigned *n_pkts, uint64_t *lat)
-{
-	*n_pkts = 0;
-	int first_packet = 0;
-	for (uint16_t i = 0; i < stats_get_n_latency(); ++i) {
-		struct task_lat_stats* s = &slm->task_lats[i];
-
-		if (s->lcore_id == lcore_id && s->task_id == task_id) {
-			struct lat_test *lat_test = &slm->lat_stats[i].lat_test;
-
-			if (lat_test->tot_pkts < MAX_PACKETS_FOR_LATENCY) {
-				*n_pkts = lat_test->tot_pkts ;
-			} else {
-				*n_pkts = MAX_PACKETS_FOR_LATENCY;
-			}
-			first_packet = (lat_test->cur_pkt + MAX_PACKETS_FOR_LATENCY - *n_pkts) % MAX_PACKETS_FOR_LATENCY;
-
-			for (unsigned j = 0; j < *n_pkts && first_packet + j < MAX_PACKETS_FOR_LATENCY; j++) {
-				lat[j] = (lat_test->lat[first_packet + j] << LATENCY_ACCURACY) * 1000000000/(slm->tsc_hz);
-			}
-
-			for (unsigned j = 0; j + MAX_PACKETS_FOR_LATENCY < first_packet + *n_pkts ; j++) {
-				lat[j + MAX_PACKETS_FOR_LATENCY - first_packet] = (lat_test->lat[j] << LATENCY_ACCURACY) * 1000000000/(slm->tsc_hz);
-			}
-			plog_info("n_pkts = %d, first_packet = %d, cur_pkt = %d\n", *n_pkts, first_packet, lat_test->cur_pkt);
-		}
-	}
+	if (lat_stats)
+		*buckets = lat_stats->lat_test.buckets;
+	else
+		*buckets = NULL;
 }
 #endif
 
-void stats_core_lat_histogram(uint8_t lcore_id, uint8_t task_id, uint64_t **buckets)
+static void stats_latency_fetch_entry(struct stats_latency_manager_entry *entry)
 {
-	*buckets = NULL;
+	struct stats_latency *cur = &entry->stats;
+	struct lat_test *lat_test_local = &entry->lat_test;
+	struct lat_test *lat_test_remote = task_lat_get_latency_meassurement(entry->task);
 
-	for (uint16_t i = 0; i < stats_get_n_latency(); ++i) {
-		struct task_lat_stats* s = &slm->task_lats[i];
+	if (!lat_test_remote)
+		return;
 
-		if (s->lcore_id == lcore_id && s->task_id == task_id) {
-			struct lat_test *lat_test = &slm->lat_stats[i].lat_test;
-
-			*buckets = lat_test->buckets;
-			return;
-		}
+	if (lat_test_remote->tot_all_pkts) {
+		lat_test_copy(&entry->lat_test, lat_test_remote);
+		lat_test_reset(lat_test_remote);
+		lat_test_combine(&entry->tot_lat_test, &entry->lat_test);
 	}
+
+	task_lat_use_other_latency_meassurement(entry->task);
+}
+
+static void stats_latency_from_lat_test(struct stats_latency *dst, struct lat_test *src)
+{
+	/* In case packets were received, but measurements were too
+	   inaccurate */
+	if (src->tot_pkts) {
+		dst->max = lat_test_get_max(src);
+		dst->min = lat_test_get_min(src);
+		dst->avg = lat_test_get_avg(src);
+		dst->stddev = lat_test_get_stddev(src);
+	}
+	dst->accuracy_limit = lat_test_get_accuracy_limit(src);
+	dst->tot_packets = src->tot_pkts;
+	dst->tot_all_packets = src->tot_all_pkts;
+	dst->lost_packets = src->lost_packets;
+}
+
+static void stats_latency_update_entry(struct stats_latency_manager_entry *entry)
+{
+	if (!entry->lat_test.tot_all_pkts)
+		return;
+
+	stats_latency_from_lat_test(&entry->stats, &entry->lat_test);
+	stats_latency_from_lat_test(&entry->tot, &entry->tot_lat_test);
 }
 
 void stats_latency_update(void)
 {
-	for (uint16_t i = 0; i < slm->n_latency; ++i) {
-		struct task_lat *task_lat = slm->task_lats[i].task;
-
-		if (task_lat->use_lt != task_lat->using_lt)
-			continue;
-
-		struct lat_test *lat_test = &task_lat->lt[!task_lat->using_lt];
-		if (lat_test->tot_pkts) {
-			memcpy(&slm->lat_stats[i].lat_test, lat_test, sizeof(struct lat_test));
-		}
-
-		if (lat_test->max_lat > slm->lat_stats[i].tot_max_lat)
-			slm->lat_stats[i].tot_max_lat = lat_test->max_lat;
-
-		if (lat_test->min_lat < slm->lat_stats[i].tot_min_lat)
-			slm->lat_stats[i].tot_min_lat = lat_test->min_lat;
-
-		lat_test->min_rx_acc = 0;
-		lat_test->max_rx_acc = 0;
-		lat_test->tot_rx_acc = 0;
-		lat_test->min_tx_acc = -1;
-		lat_test->max_tx_acc = 0;
-		lat_test->tot_tx_acc = 0;
-
-		lat_test->tot_lat = 0;
-		lat_test->var_lat = 0;
-		lat_test->tot_pkts = 0;
-#ifdef LATENCY_PER_PACKET
-		lat_test->cur_pkt = 0;
-#endif
-		lat_test->max_lat = 0;
-		lat_test->min_lat = -1;
-		memset(lat_test->buckets, 0, sizeof(lat_test->buckets));
-		task_lat->use_lt = !task_lat->using_lt;
-	}
+	for (uint16_t i = 0; i < slm->n_latency; ++i)
+		stats_latency_fetch_entry(&slm->entries[i]);
+	for (uint16_t i = 0; i < slm->n_latency; ++i)
+		stats_latency_update_entry(&slm->entries[i]);
 }
