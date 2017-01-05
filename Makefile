@@ -194,7 +194,7 @@ MAKEFLAGS += --no-print-directory
 FIRST_PROX_MAKE = 1
 export FIRST_PROX_MAKE
 all:
-	@sh ./helper-scripts/trailing.sh
+	@bash ./helper-scripts/trailing.sh
 	@$(MAKE) $@
 %::
 	@$(MAKE) $@
