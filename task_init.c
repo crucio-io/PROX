@@ -191,7 +191,7 @@ static size_t init_rx_tx_rings_ports(struct task_args *targ, struct task_base *t
 			tbase->tx_params_hw_sw.tx_rings = (struct rte_ring **)(((uint8_t *)tbase) + offset);
 			offset += sizeof(struct rte_ring *)*tbase->tx_params_hw_sw.nb_txrings;
 
-			for (uint8_t i = 0; i < tbase->tx_params_sw.nb_txrings; ++i) {
+			for (uint8_t i = 0; i < tbase->tx_params_hw_sw.nb_txrings; ++i) {
 				tbase->tx_params_hw_sw.tx_rings[i] = targ->tx_rings[i];
 			}
 

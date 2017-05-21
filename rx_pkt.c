@@ -53,7 +53,7 @@
    packets are received if the dequeue step involves finding 32 packets.
 */
 
-#define MIN_PMD_RX 16
+#define MIN_PMD_RX 32
 
 static uint16_t rx_pkt_hw_port_queue(struct port_queue *pq, struct rte_mbuf **mbufs, int multi)
 {
@@ -66,6 +66,7 @@ static uint16_t rx_pkt_hw_port_queue(struct port_queue *pq, struct rte_mbuf **mb
 		while (n != 0 && MAX_PKT_BURST - nb_rx >= MIN_PMD_RX) {
 			n = rte_eth_rx_burst(pq->port, pq->queue, mbufs + nb_rx, MIN_PMD_RX);
 			nb_rx += n;
+			PROX_PANIC(nb_rx > 64, "Received %d packets while expecting maximum %d\n", n, MIN_PMD_RX);
 		}
 	}
 	return nb_rx;
@@ -122,11 +123,12 @@ static inline uint16_t rx_pkt_hw1_param(struct task_base *tbase, struct rte_mbuf
 
 	if (multi) {
 		n = nb_rx;
-		while ((n != 0) && (MAX_PKT_BURST - nb_rx >= 16)) {
+		while ((n != 0) && (MAX_PKT_BURST - nb_rx >= MIN_PMD_RX)) {
 			n = rte_eth_rx_burst(tbase->rx_params_hw1.rx_pq.port,
 				 tbase->rx_params_hw1.rx_pq.queue,
-				 *mbufs + nb_rx, 16);
+				 *mbufs + nb_rx, MIN_PMD_RX);
 			nb_rx += n;
+			PROX_PANIC(nb_rx > 64, "Received %d packets while expecting maximum %d\n", n, MIN_PMD_RX);
 		}
 	}
 
@@ -350,7 +352,7 @@ uint16_t rx_pkt_trace(struct task_base *tbase, struct rte_mbuf ***mbufs)
 
 		for (uint32_t i = 0; i < n_trace; ++i) {
 			uint8_t *pkt = rte_pktmbuf_mtod((*mbufs)[i], uint8_t *);
-			rte_memcpy(tbase->aux->task_rt_dump.pkt_cpy, pkt, sizeof(tbase->aux->task_rt_dump.pkt_cpy[i]));
+			rte_memcpy(tbase->aux->task_rt_dump.pkt_cpy[i], pkt, sizeof(tbase->aux->task_rt_dump.pkt_cpy[i]));
 			tbase->aux->task_rt_dump.pkt_cpy_len[i] = rte_pktmbuf_pkt_len((*mbufs)[i]);
 			tbase->aux->task_rt_dump.pkt_mbuf_addr[i] = (*mbufs)[i];
 		}

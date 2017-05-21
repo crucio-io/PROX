@@ -457,7 +457,7 @@ static void task_lat_store_lat(struct task_lat *task, uint64_t rx_packet_index, 
 	}
 }
 
-static void handle_lat_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static int handle_lat_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	struct task_lat *task = (struct task_lat *)tbase;
 	uint64_t rx_time_err;
@@ -466,7 +466,7 @@ static void handle_lat_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, ui
 
 	if (n_pkts == 0) {
 		task->begin = tbase->aux->tsc_rx.before;
-		return;
+		return 0;
 	}
 
 	task_lat_update_lat_test(task);
@@ -554,9 +554,11 @@ static void handle_lat_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, ui
 		}
 		task->rx_packet_index++;
 	}
-	task->base.tx_pkt(&task->base, mbufs, n_pkts, NULL);
+	int ret;
+	ret = task->base.tx_pkt(&task->base, mbufs, n_pkts, NULL);
 	task->begin = tbase->aux->tsc_rx.before;
 	task->last_pkts_tsc = tbase->aux->tsc_rx.after;
+	return ret;
 }
 
 static void init_task_lat_latency_buffer(struct task_lat *task, uint32_t core_id)

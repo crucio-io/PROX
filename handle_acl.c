@@ -80,7 +80,7 @@ static void set_tc(struct rte_mbuf *mbuf, uint32_t tc)
 #endif
 }
 
-static void handle_acl_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static int handle_acl_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	struct task_acl *task = (struct task_acl *)tbase;
 	uint32_t results[64];
@@ -129,7 +129,7 @@ static void handle_acl_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, ui
 		};
 	}
 
-	task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
+	return task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
 }
 
 static void acl_msg(struct task_base *tbase, void **data, uint16_t n_msgs)

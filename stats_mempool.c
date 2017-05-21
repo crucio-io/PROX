@@ -30,6 +30,7 @@
 */
 
 #include <rte_mempool.h>
+#include <rte_version.h>
 #include <inttypes.h>
 
 #include "prox_malloc.h"
@@ -101,6 +102,10 @@ void stats_mempool_update(void)
 {
 	for (uint8_t mp_id = 0; mp_id < smm->n_mempools; ++mp_id) {
 		/* Note: The function free_count returns the number of used entries. */
+#if RTE_VERSION >= RTE_VERSION_NUM(17,5,0,0)
+		smm->mempool_stats[mp_id].free = rte_mempool_avail_count(smm->mempool_stats[mp_id].pool);
+#else
 		smm->mempool_stats[mp_id].free = rte_mempool_count(smm->mempool_stats[mp_id].pool);
+#endif
 	}
 }

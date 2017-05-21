@@ -165,7 +165,7 @@ static inline void handle_aggregator(struct task_aggregator *task, struct rte_mb
 	buffer_packet(task, mbuf, priority);
 }
 
-static void handle_aggregator_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static int handle_aggregator_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	struct task_aggregator *task = (struct task_aggregator *)tbase;
 
@@ -220,6 +220,7 @@ static void handle_aggregator_bulk(struct task_base *tbase, struct rte_mbuf **mb
 				break;
 		}
 	}
+	return 0;
 }
 
 static void init_task_aggregator(struct task_base *tbase, struct task_args *targ)

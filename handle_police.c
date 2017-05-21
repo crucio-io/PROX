@@ -129,7 +129,7 @@ static inline int get_user(struct task_police *task, struct rte_mbuf *mbuf)
 #define PHASE3_DELAY PREFETCH_OFFSET
 #define PHASE4_DELAY PREFETCH_OFFSET
 
-static inline void handle_pb(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts, hp handle_police_func)
+static inline int handle_pb(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts, hp handle_police_func)
 {
 	struct task_police *task = (struct task_police *)tbase;
 	uint16_t j;
@@ -188,17 +188,17 @@ static inline void handle_pb(struct task_base *tbase, struct rte_mbuf **mbufs, u
 		out[j] = handle_police_func(task, mbufs[j], cur_tsc, task->user_table[user[j]]);
 	}
 
-	task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
+	return task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
 }
 
-static void handle_police_bulk(struct task_base *tbase, struct rte_mbuf **mbuf, uint16_t n_pkts)
+static int handle_police_bulk(struct task_base *tbase, struct rte_mbuf **mbuf, uint16_t n_pkts)
 {
-        handle_pb(tbase, mbuf, n_pkts, handle_police);
+        return handle_pb(tbase, mbuf, n_pkts, handle_police);
 }
 
-static void handle_police_tr_bulk(struct task_base *tbase, struct rte_mbuf **mbuf, uint16_t n_pkts)
+static int handle_police_tr_bulk(struct task_base *tbase, struct rte_mbuf **mbuf, uint16_t n_pkts)
 {
-        handle_pb(tbase, mbuf, n_pkts, handle_police_tr);
+        return handle_pb(tbase, mbuf, n_pkts, handle_police_tr);
 }
 
 static void init_task_police(struct task_base *tbase, struct task_args *targ)

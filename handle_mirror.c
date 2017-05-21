@@ -58,8 +58,9 @@ struct task_mirror_copy {
 	uint32_t           n_dests;
 };
 
-static void handle_mirror_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static int handle_mirror_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
+	int ret = 0;
 	struct task_mirror *task = (struct task_mirror *)tbase;
 	uint8_t out[MAX_PKT_BURST];
 	struct rte_mbuf *mbufs2[MAX_PKT_BURST];
@@ -76,14 +77,16 @@ static void handle_mirror_bulk(struct task_base *tbase, struct rte_mbuf **mbufs,
 	for (uint16_t j = 0; j < task->n_dests; ++j) {
 		memset(out, j, n_pkts);
 
-		task->base.tx_pkt(&task->base, mbufs2, n_pkts, out);
+		ret+= task->base.tx_pkt(&task->base, mbufs2, n_pkts, out);
 	}
+	return ret;
 }
 
-static void handle_mirror_bulk_copy(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static int handle_mirror_bulk_copy(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	struct task_mirror_copy *task = (struct task_mirror_copy *)tbase;
 	uint8_t out[MAX_PKT_BURST];
+	int ret = 0;
 
 	/* Send copies of the packet to all but the first
 	   destination */
@@ -110,12 +113,13 @@ static void handle_mirror_bulk_copy(struct task_base *tbase, struct rte_mbuf **m
 
 			rte_memcpy(dst, src, pkt_len);
 		}
-		task->base.tx_pkt(&task->base, new_pkts, n_pkts, out);
+		ret+= task->base.tx_pkt(&task->base, new_pkts, n_pkts, out);
 	}
 
 	/* Finally, forward the incoming packets to the first destination. */
 	memset(out, 0, n_pkts);
-	task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
+	ret+= task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
+	return ret;
 }
 
 static void init_task_mirror(struct task_base *tbase, struct task_args *targ)

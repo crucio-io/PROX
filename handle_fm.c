@@ -212,7 +212,7 @@ static int handle_fm(struct task_fm *task, struct rte_mbuf *mbuf, uint64_t now_t
 	return OUT_HANDLED;
 }
 
-static void handle_fm_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static int handle_fm_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	struct task_fm *task = (struct task_fm *)tbase;
 	uint64_t now_tsc = rte_rdtsc();
@@ -233,6 +233,7 @@ static void handle_fm_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uin
 
 	TASK_STATS_ADD_DROP_HANDLED(&tbase->aux->stats, handled);
 	TASK_STATS_ADD_DROP_DISCARD(&tbase->aux->stats, discard);
+	return 0;
 }
 
 static void load_dpi_engine(const char *dpi_engine_path, struct dpi_engine *dst)

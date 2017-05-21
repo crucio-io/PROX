@@ -37,9 +37,26 @@ endif
 RTE_TARGET ?= x86_64-native-linuxapp-gcc
 
 rte_version_h := $(RTE_SDK)/$(RTE_TARGET)/include/rte_version.h
-
-rte_ver = $(shell grep -i define\ $(1) $(rte_version_h) | cut -d' ' -f3)
-rte_ver_cur := $(call rte_ver,RTE_VER_MAJOR).$(call rte_ver,RTE_VER_MINOR)
+rte_ver_part = $(shell sed -n -e 's/^\#define\s*$1\s*\(.*\)$$/\1/p' $(rte_version_h))
+rte_ver_eval = $(shell printf '%u' $$(printf '0x%02x%02x%02x%02x' $1 $2 $3 $4))
+rte_ver_MMLR = $(call rte_ver_eval,$(call \
+	rte_ver_part,RTE_VER_MAJOR),$(call \
+	rte_ver_part,RTE_VER_MINOR),$(call \
+	rte_ver_part,RTE_VER_PATCH_LEVEL),$(call \
+	rte_ver_part,RTE_VER_PATCH_RELEASE))
+rte_ver_YMMR = $(call rte_ver_eval,$(call \
+	rte_ver_part,RTE_VER_YEAR),$(call \
+	rte_ver_part,RTE_VER_MONTH),$(call \
+	rte_ver_part,RTE_VER_MINOR),$(call \
+	rte_ver_part,RTE_VER_RELEASE))
+rte_ver_dpdk := $(if $(call rte_ver_part,RTE_VER_MAJOR),$(rte_ver_MMLR),$(rte_ver_YMMR))
+rte_ver_comp = $(shell test $(rte_ver_dpdk) $5 $(call rte_ver_eval,$1,$2,$3,$4) && echo 'y')
+rte_ver_EQ = $(call rte_ver_comp,$1,$2,$3,$4,-eq)
+rte_ver_NE = $(call rte_ver_comp,$1,$2,$3,$4,-ne)
+rte_ver_GT = $(call rte_ver_comp,$1,$2,$3,$4,-gt)
+rte_ver_LT = $(call rte_ver_comp,$1,$2,$3,$4,-lt)
+rte_ver_GE = $(call rte_ver_comp,$1,$2,$3,$4,-ge)
+rte_ver_LE = $(call rte_ver_comp,$1,$2,$3,$4,-le)
 
 include $(RTE_SDK)/mk/rte.vars.mk
 
@@ -137,12 +154,7 @@ SRCS-y += handle_mplstag.c
 SRCS-y += handle_qinq_decap6.c
 
 # support for GRE encap/decap dropped in latest DPDK versions
-# year.month dpdk versions are shown here as .0
-ifneq ($(rte_ver_cur),.0)
-ifeq ($(lastword $(sort $(rte_ver_cur) 2.0)),2.0)
-SRCS-y += handle_gre_decap_encap.c
-endif
-endif
+SRCS-$(call rte_ver_LT,2,1,0,0) += handle_gre_decap_encap.c
 
 SRCS-y += rw_reg.c
 SRCS-y += handle_lb_qinq.c
@@ -152,6 +164,7 @@ SRCS-y += handle_qinq_encap4.c
 SRCS-y += handle_qinq_encap6.c
 SRCS-y += handle_classify.c
 SRCS-y += handle_l2fwd.c
+SRCS-y += handle_swap.c
 SRCS-y += handle_police.c
 SRCS-y += handle_acl.c
 SRCS-y += handle_gen.c
@@ -159,13 +172,12 @@ SRCS-y += handle_mirror.c
 SRCS-y += handle_genl4.c
 SRCS-y += handle_ipv6_tunnel.c
 SRCS-y += handle_read.c
+SRCS-y += handle_cgnat.c
 SRCS-y += handle_nat.c
 SRCS-y += handle_dump.c
 SRCS-y += handle_tsc.c
 SRCS-y += handle_fm.c
-ifneq ($(rte_ver_cur),1.7)
-SRCS-y += handle_nsh.c
-endif
+SRCS-$(call rte_ver_GE,1,8,0,16) += handle_nsh.c
 SRCS-y += handle_lb_5tuple.c
 SRCS-y += handle_blockudp.c
 SRCS-y += toeplitz.c
@@ -187,14 +199,14 @@ SRCS-y += stats_port.c stats_mempool.c stats_ring.c stats_l4gen.c
 SRCS-y += stats_latency.c stats_global.c stats_core.c stats_task.c stats_prio.c
 SRCS-y += cmd_parser.c input.c prox_shared.c prox_lua_types.c
 SRCS-y += genl4_bundle.c heap.c genl4_stream_tcp.c genl4_stream_udp.c cdf.c
-SRCS-y += stats.c stats_cons_log.c stats_parser.c hash_set.c prox_lua.c prox_malloc.c
+SRCS-y += stats.c stats_cons_log.c stats_cons_cli.c stats_parser.c hash_set.c prox_lua.c prox_malloc.c
 
 ifeq ($(FIRST_PROX_MAKE),)
 MAKEFLAGS += --no-print-directory
 FIRST_PROX_MAKE = 1
 export FIRST_PROX_MAKE
 all:
-	@bash ./helper-scripts/trailing.sh
+	@./helper-scripts/trailing.sh
 	@$(MAKE) $@
 %::
 	@$(MAKE) $@

@@ -41,6 +41,7 @@ enum PKT_SIZE_BIN {
 	PKT_SIZE_256,
 	PKT_SIZE_512,
 	PKT_SIZE_1024,
+	PKT_SIZE_1522,
 	PKT_SIZE_COUNT,
 };
 
@@ -48,6 +49,7 @@ struct port_stats_sample {
 	uint64_t tsc;
 	uint64_t no_mbufs;
 	uint64_t ierrors;
+	uint64_t imissed;
 	uint64_t oerrors;
 	uint64_t rx_tot;
 	uint64_t tx_tot;
@@ -63,6 +65,7 @@ struct port_stats {
 struct get_port_stats {
 	uint64_t no_mbufs_diff;
 	uint64_t ierrors_diff;
+	uint64_t imissed_diff;
 	uint64_t rx_bytes_diff;
 	uint64_t tx_bytes_diff;
 	uint64_t rx_pkts_diff;
@@ -71,6 +74,7 @@ struct get_port_stats {
 	uint64_t tx_tot;
 	uint64_t no_mbufs_tot;
 	uint64_t ierrors_tot;
+	uint64_t imissed_tot;
 	uint64_t last_tsc;
 	uint64_t prev_tsc;
 };
@@ -80,6 +84,7 @@ void stats_port_init(void);
 void stats_port_reset(void);
 void stats_port_update(void);
 uint64_t stats_port_get_ierrors(void);
+uint64_t stats_port_get_imissed(void);
 uint64_t stats_port_get_rx_packets(void);
 uint64_t stats_port_get_tx_packets(void);
 

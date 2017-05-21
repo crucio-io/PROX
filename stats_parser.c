@@ -362,6 +362,17 @@ static uint64_t sp_port_ierrors(int argc, const char *argv[])
 	return ps->ierrors;
 }
 
+static uint64_t sp_port_imissed(int argc, const char *argv[])
+{
+	uint32_t port_id = atoi(argv[0]);
+	struct port_stats_sample *ps;
+
+	if (port_id > PROX_MAX_PORTS || !prox_port_cfg[port_id].active)
+		return -1;
+	ps = stats_get_port_stats_sample(port_id, 1);
+	return ps->imissed;
+}
+
 static uint64_t sp_port_oerrors(int argc, const char *argv[])
 {
 	uint32_t port_id = atoi(argv[0]);
@@ -472,7 +483,7 @@ static uint64_t sp_port_tx_packets_512_1023(int argc, const char *argv[])
 	return ps->tx_pkt_size[PKT_SIZE_512];
 }
 
-static uint64_t sp_port_tx_packets_1024_max(int argc, const char *argv[])
+static uint64_t sp_port_tx_packets_1024_1522(int argc, const char *argv[])
 {
 	uint32_t port_id = atoi(argv[0]);
 	struct port_stats_sample *ps;
@@ -481,6 +492,17 @@ static uint64_t sp_port_tx_packets_1024_max(int argc, const char *argv[])
 		return -1;
 	ps = stats_get_port_stats_sample(port_id, 1);
 	return ps->tx_pkt_size[PKT_SIZE_1024];
+}
+
+static uint64_t sp_port_tx_packets_1523_max(int argc, const char *argv[])
+{
+	uint32_t port_id = atoi(argv[0]);
+	struct port_stats_sample *ps;
+
+	if (port_id > PROX_MAX_PORTS || !prox_port_cfg[port_id].active)
+		return -1;
+	ps = stats_get_port_stats_sample(port_id, 1);
+	return ps->tx_pkt_size[PKT_SIZE_1522];
 }
 
 static uint64_t sp_port_tsc(int argc, const char *argv[])
@@ -723,6 +745,11 @@ static uint64_t sp_global_nics_ierrors(int argc, const char *argv[])
 	return stats_get_global_stats(1)->nics_ierrors;
 }
 
+static uint64_t sp_global_nics_imissed(int argc, const char *argv[])
+{
+	return stats_get_global_stats(1)->nics_imissed;
+}
+
 static uint64_t sp_global_tsc(int argc, const char *argv[])
 {
 	return stats_get_global_stats(1)->tsc;
@@ -741,6 +768,7 @@ struct stats_path_str stats_paths[] = {
 	{"global.nics.rx.packets", sp_global_nics_rx_packets},
 	{"global.nics.tx.packets", sp_global_nics_tx_packets},
 	{"global.nics.ierrrors", sp_global_nics_ierrors},
+	{"global.nics.imissed", sp_global_nics_imissed},
 	{"global.tsc", sp_global_tsc},
 
 	{"task.core(#).task(#).idle_cycles", sp_task_idle_cycles},
@@ -757,6 +785,7 @@ struct stats_path_str stats_paths[] = {
 
 	{"port(#).no_mbufs", sp_port_no_mbufs},
 	{"port(#).ierrors", sp_port_ierrors},
+	{"port(#).imissed", sp_port_imissed},
 	{"port(#).oerrors", sp_port_oerrors},
 	{"port(#).rx.packets", sp_port_rx_packets},
 	{"port(#).tx.packets", sp_port_tx_packets},
@@ -767,7 +796,8 @@ struct stats_path_str stats_paths[] = {
 	{"port(#).tx.packets_128_255", sp_port_tx_packets_128_255},
 	{"port(#).tx.packets_256_511", sp_port_tx_packets_256_511},
 	{"port(#).tx.packets_512_1023", sp_port_tx_packets_512_1023},
-	{"port(#).tx.packets_1024_max", sp_port_tx_packets_1024_max},
+	{"port(#).tx.packets_1024_1522", sp_port_tx_packets_1024_1522},
+	{"port(#).tx.packets_1523_max", sp_port_tx_packets_1523_max},
 	{"port(#).tsc", sp_port_tsc},
 
 	{"mem(#).used", sp_mem_used},

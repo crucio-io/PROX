@@ -56,6 +56,7 @@
 #include "handle_routing.h"
 #include "handle_qinq_decap4.h"
 #include "handle_lat.h"
+#include "handle_arp.h"
 #include "handle_gen.h"
 #include "handle_acl.h"
 #include "handle_irq.h"
@@ -63,6 +64,7 @@
 #include "prox_cfg.h"
 #include "version.h"
 #include "stats_latency.h"
+#include "handle_cgnat.h"
 
 static int core_task_is_valid(int lcore_id, int task_id)
 {
@@ -321,7 +323,7 @@ static int parse_cmd_rate(const char *str, struct input *input)
 	return 0;
 }
 
-static int task_is_mode(uint32_t lcore_id, uint32_t task_id, const char *mode, const char *sub_mode)
+int task_is_mode(uint32_t lcore_id, uint32_t task_id, const char *mode, const char *sub_mode)
 {
 	struct task_init *t = lcore_cfg[lcore_id].targs[task_id].task_init;
 
@@ -352,7 +354,7 @@ static int parse_cmd_count(const char *str, struct input *input)
 	if (cores_task_are_valid(lcores, task_id, nb_cores)) {
 		for (unsigned int i = 0; i < nb_cores; i++) {
 			lcore_id = lcores[i];
-			if (!task_is_mode(lcore_id, task_id, "gen", "")) {
+			if ((!task_is_mode(lcore_id, task_id, "gen", "")) && (!task_is_mode(lcore_id, task_id, "gen", "l3"))) {
 				plog_err("Core %u task %u is not generating packets\n", lcore_id, task_id);
 			}
 			else {
@@ -380,7 +382,7 @@ static int parse_cmd_pkt_size(const char *str, struct input *input)
 	if (cores_task_are_valid(lcores, task_id, nb_cores)) {
 		for (unsigned int i = 0; i < nb_cores; i++) {
 			lcore_id = lcores[i];
-			if (!task_is_mode(lcore_id, task_id, "gen", "")) {
+			if ((!task_is_mode(lcore_id, task_id, "gen", "")) && (!task_is_mode(lcore_id, task_id, "gen", "l3"))) {
 				plog_err("Core %u task %u is not generating packets\n", lcore_id, task_id);
 			}
 			struct task_base *tbase = lcore_cfg[lcore_id].tasks_all[task_id];
@@ -411,7 +413,7 @@ static int parse_cmd_speed(const char *str, struct input *input)
 
 	for (i = 0; i < nb_cores; i++) {
 		lcore_id = lcores[i];
-		if (!task_is_mode(lcore_id, task_id, "gen", "")) {
+		if ((!task_is_mode(lcore_id, task_id, "gen", "")) && (!task_is_mode(lcore_id, task_id, "gen", "l3"))) {
 			plog_err("Core %u task %u is not generating packets\n", lcore_id, task_id);
 		}
 		else if (speed > 400.0f || speed < 0.0f) {
@@ -445,7 +447,7 @@ static int parse_cmd_speed_byte(const char *str, struct input *input)
 		for (unsigned int i = 0; i < nb_cores; i++) {
 			lcore_id = lcores[i];
 
-			if (!task_is_mode(lcore_id, task_id, "gen", "")) {
+			if ((!task_is_mode(lcore_id, task_id, "gen", "")) && (!task_is_mode(lcore_id, task_id, "gen", "l3"))) {
 				plog_err("Core %u task %u is not generating packets\n", lcore_id, task_id);
 			}
 			else if (bps > 1250000000) {
@@ -471,7 +473,7 @@ static int parse_cmd_reset_randoms_all(const char *str, struct input *input)
 	unsigned task_id, lcore_id = -1;
 	while (prox_core_next(&lcore_id, 0) == 0) {
 		for (task_id = 0; task_id < lcore_cfg[lcore_id].n_tasks_all; task_id++) {
-			if (task_is_mode(lcore_id, task_id, "gen", "")) {
+			if ((!task_is_mode(lcore_id, task_id, "gen", "")) && (!task_is_mode(lcore_id, task_id, "gen", "l3"))) {
 				struct task_base *tbase = lcore_cfg[lcore_id].tasks_all[task_id];
 				uint32_t n_rands = task_gen_get_n_randoms(tbase);
 
@@ -492,7 +494,7 @@ static int parse_cmd_reset_values_all(const char *str, struct input *input)
 	unsigned task_id, lcore_id = -1;
 	while (prox_core_next(&lcore_id, 0) == 0) {
 		for (task_id = 0; task_id < lcore_cfg[lcore_id].n_tasks_all; task_id++) {
-			if (task_is_mode(lcore_id, task_id, "gen", "")) {
+			if ((!task_is_mode(lcore_id, task_id, "gen", "")) && (!task_is_mode(lcore_id, task_id, "gen", "l3"))) {
 				struct task_base *tbase = lcore_cfg[lcore_id].tasks_all[task_id];
 
 				plog_info("Resetting values on core %d task %d\n", lcore_id, task_id);
@@ -513,7 +515,7 @@ static int parse_cmd_reset_values(const char *str, struct input *input)
 	if (cores_task_are_valid(lcores, task_id, nb_cores)) {
 		for (unsigned int i = 0; i < nb_cores; i++) {
 			lcore_id = lcores[i];
-			if (!task_is_mode(lcore_id, task_id, "gen", "")) {
+			if ((!task_is_mode(lcore_id, task_id, "gen", "")) && (!task_is_mode(lcore_id, task_id, "gen", "l3"))) {
 				plog_err("Core %u task %u is not generating packets\n", lcore_id, task_id);
 			}
 			else {
@@ -544,7 +546,7 @@ static int parse_cmd_set_value(const char *str, struct input *input)
 	if (cores_task_are_valid(lcores, task_id, nb_cores)) {
 		for (unsigned int i = 0; i < nb_cores; i++) {
 			lcore_id = lcores[i];
-			if (!task_is_mode(lcore_id, task_id, "gen", "")) {
+			if ((!task_is_mode(lcore_id, task_id, "gen", "")) && (!task_is_mode(lcore_id, task_id, "gen", "l3"))) {
 				plog_err("Core %u task %u is not generating packets\n", lcore_id, task_id);
 			}
 			else if (offset > ETHER_MAX_LEN) {
@@ -585,7 +587,7 @@ static int parse_cmd_set_random(const char *str, struct input *input)
 	if (cores_task_are_valid(lcores, task_id, nb_cores)) {
 		for (unsigned int i = 0; i < nb_cores; i++) {
 			lcore_id = lcores[i];
-			if (!task_is_mode(lcore_id, task_id, "gen", "")) {
+			if ((!task_is_mode(lcore_id, task_id, "gen", "")) && (!task_is_mode(lcore_id, task_id, "gen", "l3"))) {
 				plog_err("Core %u task %u is not generating packets\n", lcore_id, task_id);
 			}
 			else if (offset > ETHER_MAX_LEN) {
@@ -702,6 +704,62 @@ static int parse_cmd_rule_add(const char *str, struct input *input)
 		}
 	}
 	return -1;
+}
+
+static int parse_cmd_gateway_ip(const char *str, struct input *input)
+{
+	unsigned lcores[RTE_MAX_LCORE], lcore_id, task_id, ip[4], nb_cores, i;
+
+	if (parse_core_task(str, lcores, &task_id, &nb_cores))
+		return -1;
+	if (!(str = strchr_skip_twice(str, ' ')))
+		return -1;
+	if (!strcmp(str, ""))
+		return -1;
+	if (sscanf(str, "%u.%u.%u.%u", ip, ip + 1, ip + 2, ip + 3) != 4) {
+		return -1;
+	}
+	for (i = 0; i < nb_cores; i++) {
+		lcore_id = lcores[i];
+		if ((!task_is_mode(lcore_id, task_id, "gen", "")) && (!task_is_mode(lcore_id, task_id, "gen", "l3"))) {
+			plog_err("Core %u task %u is not generating packets\n", lcore_id, task_id);
+		}
+		else {
+			uint32_t gateway_ip = ((ip[3] & 0xFF) << 24) | ((ip[2] & 0xFF) << 16) | ((ip[1] & 0xFF) << 8) | ((ip[0] & 0xFF) << 0);
+			struct task_base *tbase = lcore_cfg[lcore_id].tasks_all[task_id];
+			plog_info("Setting gateway ip to %s\n", str);
+			task_gen_set_gateway_ip(tbase, gateway_ip);
+		}
+	}
+	return 0;
+}
+
+static int parse_cmd_local_ip(const char *str, struct input *input)
+{
+	unsigned lcores[RTE_MAX_LCORE], lcore_id, task_id, ip[4], nb_cores, i;
+
+	if (parse_core_task(str, lcores, &task_id, &nb_cores))
+		return -1;
+	if (!(str = strchr_skip_twice(str, ' ')))
+		return -1;
+	if (!strcmp(str, ""))
+		return -1;
+	if (sscanf(str, "%u.%u.%u.%u", ip, ip + 1, ip + 2, ip + 3) != 4) {
+		return -1;
+	}
+	for (i = 0; i < nb_cores; i++) {
+		lcore_id = lcores[i];
+		if (!task_is_mode(lcore_id, task_id, "arp", "local")) {
+			plog_err("Core %u task %u is not in arp mode\n", lcore_id, task_id);
+		}
+		else {
+			uint32_t local_ip = ((ip[3] & 0xFF) << 24) | ((ip[2] & 0xFF) << 16) | ((ip[1] & 0xFF) << 8) | ((ip[0] & 0xFF) << 0);
+			struct task_base *tbase = lcore_cfg[lcore_id].tasks_all[task_id];
+			plog_info("Setting local ip to %s\n", str);
+			task_arp_set_local_ip(tbase, local_ip);
+		}
+	}
+	return 0;
 }
 
 static int parse_cmd_route_add(const char *str, struct input *input)
@@ -1014,6 +1072,29 @@ static int parse_cmd_tot_ierrors_tot(const char *str, struct input *input)
 	return 0;
 }
 
+static int parse_cmd_tot_imissed_tot(const char *str, struct input *input)
+{
+	if (strcmp(str, "") != 0) {
+		return -1;
+	}
+
+	struct global_stats_sample *gsl = stats_get_global_stats(1);
+	uint64_t tot = gsl->nics_imissed;
+	uint64_t last_tsc = gsl->tsc;
+
+	if (input->reply) {
+		char buf[128];
+		snprintf(buf, sizeof(buf),
+			 "%"PRIu64",%"PRIu64",%"PRIu64"\n",
+			 tot, last_tsc, rte_get_tsc_hz());
+		input->reply(input, buf, strlen(buf));
+	}
+	else {
+		plog_info("imissed: %"PRIu64"\n", tot);
+	}
+	return 0;
+}
+
 static int parse_cmd_reset_port(const char *str, struct input *input)
 {
 	uint32_t port_id;
@@ -1049,6 +1130,103 @@ static int parse_cmd_read_reg(const char *str, struct input *input)
         }
 
 	cmd_read_reg(port_id, id);
+	return 0;
+}
+
+static int parse_cmd_cache_reset(const char *str, struct input *input)
+{
+	cmd_cache_reset();
+	return 0;
+}
+
+static int parse_cmd_set_cache_class_mask(const char *str, struct input *input)
+{
+	uint32_t lcore_id;
+	uint32_t set;
+	uint32_t val;
+
+	if (sscanf(str, "%u %u %u", &lcore_id, &set, &val) != 3) {
+                return -1;
+        }
+
+	cmd_set_cache_class_mask(lcore_id, set, val);
+	return 0;
+}
+
+static int parse_cmd_set_cache_class(const char *str, struct input *input)
+{
+	uint32_t lcore_id;
+	uint32_t set;
+
+	if (sscanf(str, "%u %u", &lcore_id, &set) != 2) {
+                return -1;
+        }
+
+	cmd_set_cache_class(lcore_id, set);
+	return 0;
+}
+
+static int parse_cmd_get_cache_class_mask(const char *str, struct input *input)
+{
+	uint32_t lcore_id;
+	uint32_t set;
+	uint32_t val = 0;
+
+	if (sscanf(str, "%u %u", &lcore_id, &set) != 2) {
+                return -1;
+        }
+
+	cmd_get_cache_class_mask(lcore_id, set, &val);
+	if (input->reply) {
+		char buf[128];
+		snprintf(buf, sizeof(buf), "%d, %d, %x\n", lcore_id, set, val);
+		input->reply(input, buf, strlen(buf));
+	} else {
+		plog_info("core=%d, set=%d, mask=%x\n", lcore_id, set, val);
+	}
+	return 0;
+}
+
+static int parse_cmd_get_cache_class(const char *str, struct input *input)
+{
+	uint32_t lcore_id;
+	uint32_t set;
+	uint32_t val;
+
+	if (sscanf(str, "%u", &lcore_id) != 1) {
+                return -1;
+        }
+
+	cmd_get_cache_class(lcore_id, &set);
+	if (input->reply) {
+		char buf[128];
+		snprintf(buf, sizeof(buf), "%d, %d\n", lcore_id, set);
+		input->reply(input, buf, strlen(buf));
+	} else {
+		plog_info("core=%d, cos=%d\n", lcore_id, set);
+	}
+	return 0;
+}
+
+static int parse_cmd_get_cache_mask(const char *str, struct input *input)
+{
+	uint32_t lcore_id;
+	uint32_t set;
+	uint32_t mask;
+
+	if (sscanf(str, "%u", &lcore_id) != 1) {
+                return -1;
+        }
+
+	cmd_get_cache_class(lcore_id, &set);
+	cmd_get_cache_class_mask(lcore_id, set, &mask);
+	if (input->reply) {
+		char buf[128];
+		snprintf(buf, sizeof(buf), "%d, %x\n", lcore_id, mask);
+		input->reply(input, buf, strlen(buf));
+	} else {
+		plog_info("core=%d, mask=%x\n", lcore_id, mask);
+	}
 	return 0;
 }
 
@@ -1246,11 +1424,11 @@ static int parse_cmd_port_stats(const char *str, struct input *input)
 		 "%"PRIu64",%"PRIu64",%"PRIu64",%"PRIu64","
 		 "%"PRIu64",%"PRIu64",%"PRIu64",%"PRIu64","
 		 "%"PRIu64",%"PRIu64",%"PRIu64",%"PRIu64"\n",
-		 s.no_mbufs_diff, s.ierrors_diff,
+		 s.no_mbufs_diff, s.ierrors_diff + s.imissed_diff,
 		 s.rx_bytes_diff, s.tx_bytes_diff,
 		 s.rx_pkts_diff, s.tx_pkts_diff,
 		 s.rx_tot, s.tx_tot,
-		 s.no_mbufs_tot, s.ierrors_tot,
+		 s.no_mbufs_tot, s.ierrors_tot + s.imissed_tot,
 		 s.last_tsc, s.prev_tsc);
 	plog_info("%s", buf);
 	if (input->reply)
@@ -1410,6 +1588,53 @@ static int parse_cmd_lat_packets(const char *str, struct input *input)
 	return 0;
 }
 
+static int parse_cmd_cgnat_public_hash(const char *str, struct input *input)
+{
+	unsigned lcores[RTE_MAX_LCORE], lcore_id, task_id, nb_cores;
+
+	if (parse_core_task(str, lcores, &task_id, &nb_cores))
+		return -1;
+
+	if (cores_task_are_valid(lcores, task_id, nb_cores)) {
+		for (unsigned int i = 0; i < nb_cores; i++) {
+			lcore_id = lcores[i];
+
+			if (!task_is_mode(lcore_id, task_id, "cgnat", "")) {
+				plog_err("Core %u task %u is not cgnat\n", lcore_id, task_id);
+			}
+			else {
+				struct task_base *tbase = lcore_cfg[lcore_id].tasks_all[task_id];
+				task_cgnat_dump_public_hash((struct task_nat *)tbase);
+			}
+		}
+	}
+	return 0;
+}
+
+static int parse_cmd_cgnat_private_hash(const char *str, struct input *input)
+{
+	unsigned lcores[RTE_MAX_LCORE], lcore_id, task_id, nb_cores;
+	uint32_t val;
+
+	if (parse_core_task(str, lcores, &task_id, &nb_cores))
+		return -1;
+
+	if (cores_task_are_valid(lcores, task_id, nb_cores)) {
+		for (unsigned int i = 0; i < nb_cores; i++) {
+			lcore_id = lcores[i];
+
+			if (!task_is_mode(lcore_id, task_id, "cgnat", "")) {
+				plog_err("Core %u task %u is not cgnat\n", lcore_id, task_id);
+			}
+			else {
+				struct task_base *tbase = lcore_cfg[lcore_id].tasks_all[task_id];
+				task_cgnat_dump_private_hash((struct task_nat *)tbase);
+			}
+		}
+	}
+	return 0;
+}
+
 static int parse_cmd_accuracy(const char *str, struct input *input)
 {
 	unsigned lcores[RTE_MAX_LCORE], lcore_id, task_id, nb_cores;
@@ -1457,7 +1682,7 @@ static int parse_cmd_version(const char *str, struct input *input)
 
 	if (input->reply) {
 		uint64_t version =
-			((uint64_t)VERSION_MAJOR) << 32 |
+			((uint64_t)VERSION_MAJOR) << 24 |
 			((uint64_t)VERSION_MINOR) << 16 |
 			((uint64_t)VERSION_REV) << 8;
 
@@ -1466,15 +1691,9 @@ static int parse_cmd_version(const char *str, struct input *input)
 		input->reply(input, buf, strlen(buf));
 	}
 	else {
-#ifndef RTE_VER_YEAR
-		plog_info("prox version: %d.%d, DPDK version: %d.%d.%d\n",
+		plog_info("prox version: %d.%d, DPDK version: %s\n",
 			  VERSION_MAJOR, VERSION_MINOR,
-			  RTE_VER_MAJOR, RTE_VER_MINOR, RTE_VER_PATCH_LEVEL);
-#else
-		plog_info("prox version: %d.%d, DPDK version: %d.%d.%d\n",
-			  VERSION_MAJOR, VERSION_MINOR,
-			  RTE_VER_YEAR, RTE_VER_MONTH, RTE_VER_MINOR);
-#endif
+			  rte_version() + sizeof(RTE_VER_PREFIX));
 	}
 	return 0;
 }
@@ -1528,22 +1747,31 @@ static struct cmd_str cmd_strings[] = {
 	{"arp add", "<core id> <task id> <port id> <gre id> <svlan> <cvlan> <ip addr> <mac addr> <user>", "Add a single ARP entry into a CPE table on <core id>/<task id>.", parse_cmd_arp_add},
 	{"rule add", "<core id> <task id> svlan_id&mask cvlan_id&mask ip_proto&mask source_ip/prefix destination_ip/prefix range dport_range action", "Add a rule to the ACL table on <core id>/<task id>", parse_cmd_rule_add},
 	{"route add", "<core id> <task id> <ip/prefix> <next hop id>", "Add a route to the routing table on core <core id> <task id>. Example: route add 10.0.16.0/24 9", parse_cmd_route_add},
+	{"gateway ip", "<core id> <task id> <ip>", "Define/Change IP address of destination gateway on core <core id> <task id>.", parse_cmd_gateway_ip},
+	{"local ip", "<core id> <task id> <ip>", "Define/Change IP address of destination gateway on core <core id> <task id>.", parse_cmd_local_ip},
 
 	{"pps unit", "", "Change core stats pps unit", parse_cmd_pps_unit},
 	{"reset stats", "", "Reset all statistics", parse_cmd_reset_stats},
 	{"reset lat stats", "", "Reset all latency statistics", parse_cmd_reset_lat_stats},
 	{"tot stats", "", "Print total RX and TX packets", parse_cmd_tot_stats},
 	{"tot ierrors tot", "", "Print total number of ierrors since reset", parse_cmd_tot_ierrors_tot},
+	{"tot imissed tot", "", "Print total number of imissed since reset", parse_cmd_tot_imissed_tot},
 	{"lat stats", "<core id> <task id>", "Print min,max,avg latency as measured during last sampling interval", parse_cmd_lat_stats},
 	{"irq stats", "<core id> <task id>", "Print irq related infos", parse_cmd_irq},
 	{"lat packets", "<core id> <task id>", "Print the latency for each of the last set of packets", parse_cmd_lat_packets},
 	{"accuracy limit", "<core id> <task id> <nsec>", "Only consider latency of packets that were measured with an error no more than <nsec>", parse_cmd_accuracy},
 	{"core stats", "<core id> <task id>", "Print rx/tx/drop for task <task id> running on core <core id>", parse_cmd_core_stats},
-	{"port_stats", "<port id>", "Print rate for no_mbufs, ierrors, rx_bytes, tx_bytes, rx_pkts, tx_pkts and totals for RX, TX, no_mbufs ierrors for port <port id>", parse_cmd_port_stats},
+	{"port_stats", "<port id>", "Print rate for no_mbufs, ierrors + imissed, rx_bytes, tx_bytes, rx_pkts, tx_pkts; totals for RX, TX, no_mbufs, ierrors + imissed for port <port id>", parse_cmd_port_stats},
 	{"read reg", "", "Read register", parse_cmd_read_reg},
 	{"write reg", "", "Read register", parse_cmd_write_reg},
 	{"set vlan offload", "", "Set Vlan offload", parse_cmd_set_vlan_offload},
 	{"set vlan filter", "", "Set Vlan filter", parse_cmd_set_vlan_filter},
+	{"reset cache", "", "Reset cache", parse_cmd_cache_reset},
+	{"set cache class mask", "<core id> <class> <mask>", "Set cache class mask for <core id>", parse_cmd_set_cache_class_mask},
+	{"get cache class mask", "<core id> <class>", "Get cache class mask", parse_cmd_get_cache_class_mask},
+	{"set cache class", "<core id> <class>", "Set cache class", parse_cmd_set_cache_class},
+	{"get cache class", "<core id>", "Get cache class", parse_cmd_get_cache_class},
+	{"get cache mask", "<core id>", "Get cache mask", parse_cmd_get_cache_mask},
 	{"reset port", "", "Reset port", parse_cmd_reset_port},
 	{"ring info all", "", "Get information about ring, such as ring size and number of elements in the ring", parse_cmd_ring_info_all},
 	{"ring info", "<core id> <task id>", "Get information about ring on core <core id> in task <task id>, such as ring size and number of elements in the ring", parse_cmd_ring_info},
@@ -1553,6 +1781,8 @@ static struct cmd_str cmd_strings[] = {
 	{"port link state", "<port id>", "Get link state (up or down) for port", parse_cmd_port_link_state},
 	{"port xstats", "<port id>", "Get extra statistics for the port", parse_cmd_xstats},
 	{"stats", "<stats_path>", "Get stats as sepcified by <stats_path>. A comma-separated list of <stats_path> can be supplied", parse_cmd_stats},
+	{"cgnat dump public hash", "<core id> <task id>", "Dump cgnat public hash table", parse_cmd_cgnat_public_hash},
+	{"cgnat dump private hash", "<core id> <task id>", "Dump cgnat private hash table", parse_cmd_cgnat_private_hash},
 	{"version", "", "Show version", parse_cmd_version},
 	{0,0,0,0},
 };
@@ -1671,7 +1901,7 @@ void cmd_parser_parse(const char *str, struct input *input)
 
 			if (cmd_strings[i].parse(str + skip, input) != 0) {
 				plog_warn("Invalid syntax for command '%s': %s %s\n",
-					  cmd_strings[i].cmd, cmd_strings[i].cmd, cmd_strings[i].help);
+					  cmd_strings[i].cmd, cmd_strings[i].args, cmd_strings[i].help);
 			}
 			return ;
 		}

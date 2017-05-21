@@ -30,6 +30,7 @@
 */
 
 #include "prox_cksum.h"
+#include "prox_port_cfg.h"
 #include <rte_byteorder.h>
 #include "log.h"
 
@@ -93,21 +94,32 @@ static void prox_write_tcp_pseudo_hdr(struct tcp_hdr *tcp, uint16_t len, uint32_
 	tcp->cksum = calc_pseudo_checksum(IPPROTO_TCP, len, src_ip_addr, dst_ip_addr);
 }
 
-void prox_ip_udp_cksum(struct rte_mbuf *mbuf, struct ipv4_hdr *pip, uint16_t l2_len, uint16_t l3_len)
+void prox_ip_udp_cksum(struct rte_mbuf *mbuf, struct ipv4_hdr *pip, uint16_t l2_len, uint16_t l3_len, int cksum_offload)
 {
-	prox_ip_cksum(mbuf, pip, l2_len, l3_len, 1);
+	prox_ip_cksum(mbuf, pip, l2_len, l3_len, cksum_offload & IPV4_CKSUM);
 
 #ifndef SOFT_CRC
-	mbuf->ol_flags |= PKT_TX_UDP_CKSUM;
+	if (cksum_offload & UDP_CKSUM)
+		mbuf->ol_flags |= PKT_TX_UDP_CKSUM;
 #endif
 
 	uint32_t l4_len = rte_bswap16(pip->total_length) - l3_len;
 	if (pip->next_proto_id == IPPROTO_UDP) {
 		struct udp_hdr *udp = (struct udp_hdr *)(((uint8_t*)pip) + l3_len);
-		prox_write_udp_pseudo_hdr(udp, l4_len, pip->src_addr, pip->dst_addr);
+#ifndef SOFT_CRC
+		if (cksum_offload & UDP_CKSUM)
+			prox_write_udp_pseudo_hdr(udp, l4_len, pip->src_addr, pip->dst_addr);
+		else
+#endif
+		prox_udp_cksum_sw(udp, l4_len, pip->src_addr, pip->dst_addr);
 	} else if (pip->next_proto_id == IPPROTO_TCP) {
 		struct tcp_hdr *tcp = (struct tcp_hdr *)(((uint8_t*)pip) + l3_len);
-		prox_write_tcp_pseudo_hdr(tcp, l4_len, pip->src_addr, pip->dst_addr);
+#ifndef SOFT_CRC
+		if (cksum_offload & UDP_CKSUM)
+			prox_write_tcp_pseudo_hdr(tcp, l4_len, pip->src_addr, pip->dst_addr);
+		else
+#endif
+		prox_tcp_cksum_sw(tcp, l4_len, pip->src_addr, pip->dst_addr);
 	}
 }
 

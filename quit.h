@@ -32,9 +32,14 @@
 #ifndef _QUIT_H_
 #define _QUIT_H_
 
+#include <signal.h>
+#include <sys/types.h>
+#include <unistd.h>
+
 #include <rte_debug.h>
 
 #include "display.h"
+#include "prox_cfg.h"
 
 /* PROX_PANIC for checks that are possibly hit due to configuration or
    when feature is not implemented. */
@@ -43,6 +48,11 @@
 		if (cond) {						\
 			plog_info(__VA_ARGS__);				\
 			display_end();					\
+ 			if (prox_cfg.flags & DSF_DAEMON) {		\
+                		pid_t ppid = getppid();			\
+				plog_info("sending SIGUSR2 to %d\n", ppid);\
+				kill(ppid, SIGUSR2);			\
+			}						\
 			rte_panic("PANIC at %s:%u, callstack:\n",	\
 				  __FILE__, __LINE__);			\
 		}							\

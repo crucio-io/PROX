@@ -80,17 +80,18 @@ static void ixgbe_read_stats(uint8_t port_id, struct port_stats_sample* stats, s
 	 * even though we actually substract again later to find out the rates!
 	 */
 	stats->ierrors = prev->ierrors;
+	stats->imissed = prev->imissed;
 	stats->rx_bytes = prev->rx_bytes;
 	stats->rx_tot = prev->rx_tot;
 	stats->tx_bytes = prev->tx_bytes;
 	stats->tx_tot = prev->tx_tot;
 
-	/* WARNING: In this implementation, we count as ierrors only the "no descriptor"
+	/* WARNING: In this implementation, we count as imiised only the "no descriptor"
 	 * missed packets cases and not the actual receive errors.
 	 */
 	before = rte_rdtsc();
 	for (i = 0; i < 8; i++) {
-		stats->ierrors += PROX_READ_REG(hw, PROX_IXGBE_MPC(i));
+		stats->imissed += PROX_READ_REG(hw, PROX_IXGBE_MPC(i));
 	}
 
 	/* RX stats */
@@ -107,7 +108,7 @@ static void ixgbe_read_stats(uint8_t port_id, struct port_stats_sample* stats, s
 	}
 #else
 	/* This version reports the packets received by the NIC, regardless of whether they
-	 * reached the host or not, etc. (no need to add ierrors to this packet count)
+	 * reached the host or not, etc. (no need to add ierrors or imissedto this packet count)
 	 */
 	stats->rx_tot += PROX_READ_REG(hw, PROX_IXGBE_TPR);
 	stats->rx_bytes += PROX_READ_REG(hw, PROX_IXGBE_TORL);
@@ -130,24 +131,32 @@ extern int last_stat;
 static struct port_stats   port_stats[PROX_MAX_PORTS];
 static uint8_t nb_interface;
 static uint8_t n_ports;
+static int num_xstats[PROX_MAX_PORTS] = {0};
 static int num_ixgbe_xstats = 0;
 
-#ifdef RTE_VER_YEAR
-#define XSTATS_SUPPORT 1
-#else
-#if RTE_VERSION >= RTE_VERSION_NUM(2,1,0,0) && RTE_VER_PATCH_RELEASE >= 1
+#if RTE_VERSION >= RTE_VERSION_NUM(2,1,0,1)
 #define XSTATS_SUPPORT 1
 #else
 #define XSTATS_SUPPORT 0
 #endif
+
+#if XSTATS_SUPPORT
+#if RTE_VERSION >= RTE_VERSION_NUM(16,7,0,0)
+static struct rte_eth_xstat *eth_xstats[PROX_MAX_PORTS] = {0};
+static struct rte_eth_xstat_name *eth_xstat_names[PROX_MAX_PORTS] = {0};
+#else
+static struct rte_eth_xstats *eth_xstats[PROX_MAX_PORTS] = {0};
+static struct rte_eth_xstats *eth_xstat_names[PROX_MAX_PORTS] = {0};
+#endif
+static int xstat_tpr_offset[PROX_MAX_PORTS] ={0}, xstat_tor_offset[PROX_MAX_PORTS] = {0};
+static int tx_pkt_size_offset[PROX_MAX_PORTS][PKT_SIZE_COUNT];
 #endif
 
-#ifdef XSTATS_SUPPORT
-static struct rte_eth_xstats *eth_xstats = NULL;
-static int xstat_tpr_offset = -1, xstat_tor_offset = -1;
-static int tx_pkt_size_offset[PKT_SIZE_COUNT] = {-1,-1,-1,-1,-1, -1};
-#endif
+#if RTE_VERSION >= RTE_VERSION_NUM(16,7,0,0)
+static int find_xstats_str(struct rte_eth_xstat_name *xstats, int n, const char *name)
+#else
 static int find_xstats_str(struct rte_eth_xstats *xstats, int n, const char *name)
+#endif
 {
 	for (int i = 0; i < n; i++) {
 		if (strcmp(xstats[i].name, name) == 0)
@@ -159,43 +168,72 @@ static int find_xstats_str(struct rte_eth_xstats *xstats, int n, const char *nam
 
 void stats_port_init(void)
 {
-#ifdef XSTATS_SUPPORT
+	for (int i = 0; i < PROX_MAX_PORTS; i++) {
+		xstat_tpr_offset[i] = -1;
+		xstat_tor_offset[i] = -1;
+		for (int j = 0; j < PKT_SIZE_COUNT; j++) {
+			tx_pkt_size_offset[i][j] = -1;
+		}
+	}
+#if XSTATS_SUPPORT
 	nb_interface = prox_last_port_active() + 1;
 	n_ports = prox_nb_active_ports();
 
 	for (uint8_t port_id = 0; port_id < nb_interface; ++port_id) {
-		if (!strcmp(prox_port_cfg[port_id].driver_name, "rte_ixgbe_pmd") && prox_port_cfg[port_id].active) {
-			num_ixgbe_xstats = rte_eth_xstats_get(port_id, NULL, 0);
-			eth_xstats = prox_zmalloc(num_ixgbe_xstats * sizeof(struct rte_eth_xstats), prox_port_cfg[port_id].socket);
-			PROX_PANIC(eth_xstats == NULL, "Error allocating memory for xstats");
-			num_ixgbe_xstats = rte_eth_xstats_get(port_id, eth_xstats, num_ixgbe_xstats);
-
-			xstat_tor_offset = find_xstats_str(eth_xstats, num_ixgbe_xstats, "rx_total_bytes");
-			xstat_tpr_offset = find_xstats_str(eth_xstats, num_ixgbe_xstats, "rx_total_packets");
-
-			tx_pkt_size_offset[PKT_SIZE_64] = find_xstats_str(eth_xstats, num_ixgbe_xstats, "tx_size_64_packets");
-			tx_pkt_size_offset[PKT_SIZE_65] = find_xstats_str(eth_xstats, num_ixgbe_xstats, "tx_size_65_to_127_packets");
-			tx_pkt_size_offset[PKT_SIZE_128] = find_xstats_str(eth_xstats, num_ixgbe_xstats, "tx_size_128_to_255_packets");
-			tx_pkt_size_offset[PKT_SIZE_256] = find_xstats_str(eth_xstats, num_ixgbe_xstats, "tx_size_256_to_511_packets");
-			tx_pkt_size_offset[PKT_SIZE_512] = find_xstats_str(eth_xstats, num_ixgbe_xstats, "tx_size_512_to_1023_packets");
-			tx_pkt_size_offset[PKT_SIZE_1024] = find_xstats_str(eth_xstats, num_ixgbe_xstats, "tx_size_1024_to_max_packets");
-
+		if (prox_port_cfg[port_id].active) {
+#if RTE_VERSION >= RTE_VERSION_NUM(16,7,0,0)
+			num_xstats[port_id] = rte_eth_xstats_get_names(port_id, NULL, 0);
+			eth_xstat_names[port_id] = prox_zmalloc(num_xstats[port_id] * sizeof(struct rte_eth_xstat_name), prox_port_cfg[port_id].socket);
+			PROX_PANIC(eth_xstat_names[port_id] == NULL, "Error allocating memory for xstats");
+			num_xstats[port_id] = rte_eth_xstats_get_names(port_id, eth_xstat_names[port_id], num_xstats[port_id]);
+			eth_xstats[port_id] = prox_zmalloc(num_xstats[port_id] * sizeof(struct rte_eth_xstat), prox_port_cfg[port_id].socket);
+			PROX_PANIC(eth_xstats[port_id] == NULL, "Error allocating memory for xstats");
+#else
+			num_xstats[port_id] = rte_eth_xstats_get(port_id, NULL, 0);
+			eth_xstats[port_id] = prox_zmalloc(num_xstats[port_id] * sizeof(struct rte_eth_xstats), prox_port_cfg[port_id].socket);
+			PROX_PANIC(eth_xstats[port_id] == NULL, "Error allocating memory for xstats");
+			eth_xstat_names[port_id] = eth_xstats[port_id];
+			num_xstats[port_id] = rte_eth_xstats_get(port_id, eth_xstats[port_id], num_xstats[port_id]);
+#endif
+			if (!strcmp(prox_port_cfg[port_id].short_name, "ixgbe")) {
+				xstat_tor_offset[port_id] = find_xstats_str(eth_xstat_names[port_id], num_xstats[port_id], "rx_total_bytes");
+				xstat_tpr_offset[port_id] = find_xstats_str(eth_xstat_names[port_id], num_xstats[port_id], "rx_total_packets");
+			}
+			tx_pkt_size_offset[port_id][PKT_SIZE_64] = find_xstats_str(eth_xstat_names[port_id], num_xstats[port_id], "tx_size_64_packets");
+			tx_pkt_size_offset[port_id][PKT_SIZE_65] = find_xstats_str(eth_xstat_names[port_id], num_xstats[port_id], "tx_size_65_to_127_packets");
+			tx_pkt_size_offset[port_id][PKT_SIZE_128] = find_xstats_str(eth_xstat_names[port_id], num_xstats[port_id], "tx_size_128_to_255_packets");
+			tx_pkt_size_offset[port_id][PKT_SIZE_256] = find_xstats_str(eth_xstat_names[port_id], num_xstats[port_id], "tx_size_256_to_511_packets");
+			tx_pkt_size_offset[port_id][PKT_SIZE_512] = find_xstats_str(eth_xstat_names[port_id], num_xstats[port_id], "tx_size_512_to_1023_packets");
+			if (0 == strcmp(prox_port_cfg[port_id].short_name, "ixgbe")) {
+				tx_pkt_size_offset[port_id][PKT_SIZE_1024] = find_xstats_str(eth_xstat_names[port_id], num_xstats[port_id], "tx_size_1024_to_max_packets");
+			} else {
+				tx_pkt_size_offset[port_id][PKT_SIZE_1024] = find_xstats_str(eth_xstat_names[port_id], num_xstats[port_id], "tx_size_1024_to_1522_packets");
+				tx_pkt_size_offset[port_id][PKT_SIZE_1522] = find_xstats_str(eth_xstat_names[port_id], num_xstats[port_id], "tx_size_1523_to_max_packets");
+			}
+			plog_info("offset = %d, %d, %d, %d, %d, %d %d\n", tx_pkt_size_offset[port_id][PKT_SIZE_64], tx_pkt_size_offset[port_id][PKT_SIZE_65], tx_pkt_size_offset[port_id][PKT_SIZE_128], tx_pkt_size_offset[port_id][PKT_SIZE_256], tx_pkt_size_offset[port_id][PKT_SIZE_512], tx_pkt_size_offset[port_id][PKT_SIZE_1024], tx_pkt_size_offset[port_id][PKT_SIZE_1522]);
+#if RTE_VERSION >= RTE_VERSION_NUM(16,7,0,0)
+			prox_free(eth_xstat_names[port_id]);
+#endif
+			if (num_xstats[port_id] == 0 || eth_xstats[port_id] == NULL) {
+				plog_warn("Failed to initialize xstat for port %d, running without xstats\n", port_id);
+				num_xstats[port_id] = 0;
+			}
+		}
+	}
+	for (uint8_t port_id = 0; port_id < nb_interface; ++port_id) {
+		if ((xstat_tor_offset[port_id] != -1) && (xstat_tpr_offset[port_id] != -1)) {
+			num_ixgbe_xstats = 2;	// ixgbe PMD supports tor and tpr xstats
 			break;
 		}
 	}
-	if (xstat_tor_offset == -1 ||
-	    xstat_tpr_offset == -1 ||
-	    num_ixgbe_xstats == 0 ||
-	    eth_xstats == NULL) {
-		plog_warn("Failed to initialize xstat, running without xstats\n");
-		num_ixgbe_xstats = 0;
-	}
+	if (num_ixgbe_xstats == 0)
+		plog_warn("Failed to initialize ixgbe xstat, running without ixgbe xstats\n");
 #endif
 }
 
 static void nic_read_stats(uint8_t port_id)
 {
-	unsigned is_ixgbe = (0 == strcmp(prox_port_cfg[port_id].driver_name, "rte_ixgbe_pmd"));
+	unsigned is_ixgbe = (0 == strcmp(prox_port_cfg[port_id].short_name, "ixgbe"));
 
 	struct port_stats_sample *stats = &port_stats[port_id].sample[last_stat];
 
@@ -217,6 +255,7 @@ static void nic_read_stats(uint8_t port_id)
 	stats->tsc = (before >> 1) + (after >> 1);
 	stats->no_mbufs = eth_stat.rx_nombuf;
 	stats->ierrors = eth_stat.ierrors;
+	stats->imissed = eth_stat.imissed;
 	stats->oerrors = eth_stat.oerrors;
 	stats->rx_bytes = eth_stat.ibytes;
 
@@ -226,20 +265,23 @@ static void nic_read_stats(uint8_t port_id)
 	   DPDK 2.1 API. So, we report the number of bytes (including
 	   overhead) received by the host. */
 
+#if XSTATS_SUPPORT
+	if (num_xstats[port_id]) {
+		rte_eth_xstats_get(port_id, eth_xstats[port_id], num_xstats[port_id]);
+		for (size_t i = 0; i < sizeof(tx_pkt_size_offset[0])/sizeof(tx_pkt_size_offset[0][0]); ++i) {
+			stats->tx_pkt_size[i] = (eth_xstats[port_id][tx_pkt_size_offset[port_id][i]]).value;
+		}
+	}
+#endif
 	if (is_ixgbe) {
-#ifdef XSTATS_SUPPORT
+#if XSTATS_SUPPORT
 		if (num_ixgbe_xstats) {
-			rte_eth_xstats_get(port_id, eth_xstats, num_ixgbe_xstats);
-
-			stats->rx_tot = eth_xstats[xstat_tpr_offset].value;
-			stats->rx_bytes = eth_xstats[xstat_tor_offset].value;
-
-			for (size_t i = 0; i < sizeof(tx_pkt_size_offset)/sizeof(tx_pkt_size_offset[0]); ++i)
-				stats->tx_pkt_size[i] = eth_xstats[tx_pkt_size_offset[i]].value;
+			stats->rx_tot = eth_xstats[port_id][xstat_tpr_offset[port_id]].value;
+			stats->rx_bytes = eth_xstats[port_id][xstat_tor_offset[port_id]].value;
 		} else
 #endif
 		{
-			stats->rx_tot = eth_stat.ipackets + eth_stat.ierrors;
+			stats->rx_tot = eth_stat.ipackets + eth_stat.ierrors + eth_stat.imissed;
 			/* On ixgbe, the rx_bytes counts bytes
 			   received by Host without overhead. The
 			   rx_tot counts the number of packets
@@ -251,13 +293,13 @@ static void nic_read_stats(uint8_t port_id)
 			   counted. */
 			if (prox_port_cfg[port_id].port_conf.rxmode.hw_strip_crc == 1)
 				stats->rx_bytes = eth_stat.ibytes +
-					(24 * eth_stat.ipackets - 20 * eth_stat.ierrors);
+					(24 * eth_stat.ipackets - 20 * (eth_stat.ierrors + eth_stat.imissed));
 			else
 				stats->rx_bytes = eth_stat.ibytes +
-					(20 * eth_stat.ipackets - 20 * eth_stat.ierrors);
+					(20 * eth_stat.ipackets - 20 * (eth_stat.ierrors + eth_stat.imissed));
 		}
 	} else {
-		stats->rx_tot = eth_stat.ipackets;
+		stats->rx_tot = eth_stat.ipackets + eth_stat.imissed;
 	}
 	stats->tx_tot = eth_stat.opackets;
 	stats->tx_bytes = eth_stat.obytes;
@@ -289,6 +331,17 @@ uint64_t stats_port_get_ierrors(void)
 	for (uint8_t port_id = 0; port_id < nb_interface; ++port_id) {
 		if (prox_port_cfg[port_id].active)
 			ret += port_stats[port_id].sample[last_stat].ierrors;
+	}
+	return ret;
+}
+
+uint64_t stats_port_get_imissed(void)
+{
+	uint64_t ret = 0;
+
+	for (uint8_t port_id = 0; port_id < nb_interface; ++port_id) {
+		if (prox_port_cfg[port_id].active)
+			ret += port_stats[port_id].sample[last_stat].imissed;
 	}
 	return ret;
 }
@@ -335,15 +388,20 @@ int stats_port(uint8_t port_id, struct get_port_stats *gps)
 
 	gps->no_mbufs_diff = last->no_mbufs - prev->no_mbufs;
 	gps->ierrors_diff = last->ierrors - prev->ierrors;
+	gps->imissed_diff = last->imissed - prev->imissed;
 	gps->rx_bytes_diff = last->rx_bytes - prev->rx_bytes;
 	gps->tx_bytes_diff = last->tx_bytes - prev->tx_bytes;
 	gps->rx_pkts_diff = last->rx_tot - prev->rx_tot;
+	if (unlikely(prev->rx_tot > last->rx_tot))
+		gps->rx_pkts_diff = 0;
 	gps->tx_pkts_diff = last->tx_tot - prev->tx_tot;
-
+	if (unlikely(prev->tx_tot > last->tx_tot))
+		gps->rx_pkts_diff = 0;
 	gps->rx_tot = last->rx_tot;
 	gps->tx_tot = last->tx_tot;
 	gps->no_mbufs_tot = last->no_mbufs;
 	gps->ierrors_tot = last->ierrors;
+	gps->imissed_tot = last->imissed;
 
 	gps->last_tsc = last->tsc;
 	gps->prev_tsc = prev->tsc;

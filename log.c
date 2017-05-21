@@ -41,6 +41,7 @@
 
 #include "log.h"
 #include "display.h"
+#include "etypes.h"
 #include "prox_cfg.h"
 
 static pthread_mutex_t file_mtx = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP;
@@ -163,8 +164,12 @@ static	int dump_pkt(char *dst, size_t dst_size, const struct rte_mbuf *mbuf)
 	const uint16_t len = rte_pktmbuf_pkt_len(mbuf);
 	size_t str_len = 0;
 
-	str_len = snprintf(dst, dst_size, "pkt_len=%u, Eth=%x, Proto=%#06x",
-			   len, peth->ether_type, dpip->next_proto_id);
+	if (peth->ether_type == ETYPE_IPv4)
+		str_len = snprintf(dst, dst_size, "pkt_len=%u, Eth=%x, Proto=%#06x",
+			   	len, peth->ether_type, dpip->next_proto_id);
+	else
+		str_len = snprintf(dst, dst_size, "pkt_len=%u, Eth=%x",
+				len, peth->ether_type);
 
 	for (uint16_t i = 0; i < len && i < DUMP_PKT_LEN && str_len < dst_size; ++i) {
 		if (i % 16 == 0) {

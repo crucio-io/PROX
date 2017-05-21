@@ -53,7 +53,7 @@ struct cfg_section {
 	int		error;
 };
 
-#define MAX_CFG_STRING_LEN 2048
+#define MAX_CFG_STRING_LEN 8192
 #define STRING_TERMINATOR_LEN 4
 
 struct cfg_file {

@@ -74,7 +74,7 @@ static inline void prox_ip_cksum(struct rte_mbuf *mbuf, struct ipv4_hdr *buf, ui
 #endif
 }
 
-void prox_ip_udp_cksum(struct rte_mbuf *mbuf, struct ipv4_hdr *buf, uint16_t l2_len, uint16_t l3_len);
+void prox_ip_udp_cksum(struct rte_mbuf *mbuf, struct ipv4_hdr *buf, uint16_t l2_len, uint16_t l3_len, int cksum_offload);
 
 /* src_ip_addr/dst_ip_addr are in network byte order */
 void prox_udp_cksum_sw(struct udp_hdr *udp, uint16_t len, uint32_t src_ip_addr, uint32_t dst_ip_addr);

@@ -102,8 +102,8 @@ struct task_ipv6_encap {
 
 #define MAKE_KEY_FROM_FIELDS(ipv4_addr, port, port_mask) ( ((uint64_t)ipv4_addr << 16) | (port & port_mask) )
 
-static void handle_ipv6_decap_bulk(struct task_base* tbase, struct rte_mbuf** rx_mbuf, const uint16_t n_pkts);
-static void handle_ipv6_encap_bulk(struct task_base* tbase, struct rte_mbuf** rx_mbuf, const uint16_t n_pkts);
+static int handle_ipv6_decap_bulk(struct task_base* tbase, struct rte_mbuf** rx_mbuf, const uint16_t n_pkts);
+static int handle_ipv6_encap_bulk(struct task_base* tbase, struct rte_mbuf** rx_mbuf, const uint16_t n_pkts);
 
 static void init_lookup_table(struct task_ipv6_tun_base* ptask, struct task_args *targ)
 {
@@ -177,7 +177,7 @@ static void init_task_ipv6_tun_base(struct task_ipv6_tun_base* tun_base, struct 
 
 	struct prox_port_cfg *port = find_reachable_port(targ);
 	if (port) {
-		tun_base->offload_crc = port->capabilities.tx_offload_ipv4_cksum;
+		tun_base->offload_crc = port->capabilities.tx_offload_cksum;
 	}
 }
 
@@ -322,7 +322,7 @@ __attribute__((cold)) static void handle_error(struct task_ipv6_tun_base* ptask,
                         IPv4_BYTES(((unsigned char*)&lookup_addr)), lookup_port, key);
 }
 
-static void handle_ipv6_decap_bulk(struct task_base* tbase, struct rte_mbuf** mbufs, const uint16_t n_pkts)
+static int handle_ipv6_decap_bulk(struct task_base* tbase, struct rte_mbuf** mbufs, const uint16_t n_pkts)
 {
         struct task_ipv6_decap* task = (struct task_ipv6_decap *)tbase;
         uint64_t pkts_mask = RTE_LEN2MASK(n_pkts, uint64_t);
@@ -353,10 +353,10 @@ static void handle_ipv6_decap_bulk(struct task_base* tbase, struct rte_mbuf** mb
                 }
         }
 
-	task->base.base.tx_pkt(tbase, mbufs, n_pkts, out);
+	return task->base.base.tx_pkt(tbase, mbufs, n_pkts, out);
 }
 
-static void handle_ipv6_encap_bulk(struct task_base* tbase, struct rte_mbuf** mbufs, const uint16_t n_pkts)
+static int handle_ipv6_encap_bulk(struct task_base* tbase, struct rte_mbuf** mbufs, const uint16_t n_pkts)
 {
 	struct task_ipv6_encap* task = (struct task_ipv6_encap *)tbase;
         uint64_t pkts_mask = RTE_LEN2MASK(n_pkts, uint64_t);
@@ -386,7 +386,7 @@ static void handle_ipv6_encap_bulk(struct task_base* tbase, struct rte_mbuf** mb
                 }
         }
 
-	task->base.base.tx_pkt(tbase, mbufs, n_pkts, out);
+	return task->base.base.tx_pkt(tbase, mbufs, n_pkts, out);
 }
 
 static inline uint8_t handle_ipv6_decap(struct task_ipv6_decap* ptask, struct rte_mbuf* rx_mbuf, __attribute__((unused)) struct ipv6_tun_dest* tun_dest)

@@ -39,6 +39,9 @@
 
 enum addr_type {PROX_PORT_MAC_HW, PROX_PORT_MAC_SET, PROX_PORT_MAC_RAND};
 
+#define IPV4_CKSUM	1
+#define UDP_CKSUM	2
+
 struct prox_port_cfg {
 	struct rte_mempool *pool[32];  /* Rx/Tx mempool */
 	size_t pool_size[32];
@@ -68,7 +71,7 @@ struct prox_port_cfg {
 	struct rte_eth_rxconf rx_conf;
 	struct rte_eth_txconf tx_conf;
 	struct {
-		int tx_offload_ipv4_cksum;
+		int tx_offload_cksum;
 	} capabilities;
 };
 

@@ -151,7 +151,7 @@ static void early_init(struct task_args *targ)
 	}
 }
 
-static void handle_qinq_encap6_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static int handle_qinq_encap6_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	struct task_qinq_encap6 *task = (struct task_qinq_encap6 *)tbase;
 	uint8_t out[MAX_PKT_BURST];
@@ -173,10 +173,10 @@ static void handle_qinq_encap6_bulk(struct task_base *tbase, struct rte_mbuf **m
 	}
 #endif
 
-	task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
+	return task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
 }
 
-static void handle_qinq_encap6_untag_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static int handle_qinq_encap6_untag_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	struct task_qinq_encap6 *task = (struct task_qinq_encap6 *)tbase;
 	uint8_t out[MAX_PKT_BURST];
@@ -208,7 +208,7 @@ static void handle_qinq_encap6_untag_bulk(struct task_base *tbase, struct rte_mb
 	}
 #endif
 
-	task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
+	return task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
 }
 
 static struct task_init task_init_qinq_encap6 = {

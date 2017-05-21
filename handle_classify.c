@@ -81,7 +81,7 @@ static inline void handle_classify(struct task_classify *task, struct rte_mbuf *
 	rte_sched_port_pkt_write(mbuf, 0, task->user_table[qinq], tc, queue, 0);
 }
 
-static void handle_classify_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static int handle_classify_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	struct task_classify *task = (struct task_classify *)tbase;
 
@@ -108,7 +108,7 @@ static void handle_classify_bulk(struct task_base *tbase, struct rte_mbuf **mbuf
 	}
 #endif
 
-	task->base.tx_pkt(&task->base, mbufs, n_pkts, NULL);
+	return task->base.tx_pkt(&task->base, mbufs, n_pkts, NULL);
 }
 
 static void init_task_classify(struct task_base *tbase, struct task_args *targ)

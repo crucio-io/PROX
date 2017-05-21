@@ -56,6 +56,9 @@ static uint64_t val_to_rate(uint64_t val, uint64_t delta_t)
 {
 	if (val < thresh) {
 		return val * tsc_hz / delta_t;
+	} else if (val >> 2 < thresh) {
+		/* bytes per sec malls into this category ... */
+		return ((val >> 2) * tsc_hz) / (delta_t >> 2);
 	} else {
 		if (delta_t < tsc_hz)
 			return UINT64_MAX;

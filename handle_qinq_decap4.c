@@ -162,7 +162,7 @@ static void init_task_qinq_decap4(struct task_base *tbase, struct task_args *tar
 
 	struct prox_port_cfg *port = find_reachable_port(targ);
 	if (port) {
-		task->offload_crc = port->capabilities.tx_offload_ipv4_cksum;
+		task->offload_crc = port->capabilities.tx_offload_cksum;
 	}
 
 	// By default, calling this function 1K times per second => 64K ARP per second max
@@ -356,7 +356,7 @@ static void arp_update(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_
 	}
 }
 
-static void handle_qinq_decap4_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static int handle_qinq_decap4_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	struct task_qinq_decap4 *task = (struct task_qinq_decap4 *)tbase;
 	uint64_t pkts_mask = RTE_LEN2MASK(n_pkts, uint64_t);
@@ -390,7 +390,7 @@ static void handle_qinq_decap4_bulk(struct task_base *tbase, struct rte_mbuf **m
 		}
 	}
 
-	task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
+	return task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
 }
 
 /* add gre header */
@@ -464,7 +464,7 @@ static inline uint8_t gre_encap_route(uint32_t src_ipv4, struct rte_mbuf *mbuf, 
 	uint16_t ip_len = rte_be_to_cpu_16(pip->total_length);
 
 	/* returns 0 on success, returns -ENOENT of failure (or -EINVAL if first or last parameter is NULL) */
-#ifdef RTE_VER_YEAR
+#if RTE_VERSION >= RTE_VERSION_NUM(16,4,0,1)
 	uint32_t next_hop_index;
 #else
 	uint8_t next_hop_index;

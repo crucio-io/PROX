@@ -1,0 +1,118 @@
+# Copyright(c) 2010-2017 Intel Corporation.
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+#
+#   * Redistributions of source code must retain the above copyright
+#     notice, this list of conditions and the following disclaimer.
+#   * Redistributions in binary form must reproduce the above copyright
+#     notice, this list of conditions and the following disclaimer in
+#     the documentation and/or other materials provided with the
+#     distribution.
+#   * Neither the name of Intel Corporation nor the names of its
+#     contributors may be used to endorse or promote products derived
+#     from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+# A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+# OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+# SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+# LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+# DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+# THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+heat_template_version: 2016-04-08
+description: RAPID stack (Rapid Automated Performance Indication for Dataplane)
+parameters:
+  image:
+    type: string
+    label: Image name or ID
+    description: Image to be used for compute instance
+    default: RapidVM
+  flavor:
+    type: string
+    label: Flavor
+    description: Type of instance (flavor) to be used
+    default: prox_flavor
+  key:
+    type: string
+    label: Key name
+    description: Name of key-pair to be used for compute instance
+    default: prox
+  dpdk_network:
+    type: string
+    label: Private network name or ID
+    description: Network to attach instance to.
+    default: dpdk-network
+  private_network:
+    type: string
+    label: Private network name or ID
+    description: Network to attach instance to.
+    default: admin_internal_net
+  availability_zone:
+    type: string
+    description: The Availability Zone to launch the instance.
+    default: nova
+
+resources:
+  sut:
+    type: OS::Nova::Server
+    properties:
+      availability_zone: { get_param: availability_zone }
+      user_data:
+        get_file: prox_sut_user_data.sh
+      key_name: { get_param: key }
+      image: { get_param: image }
+      flavor: { get_param: flavor }
+      networks:
+        - network: { get_param: private_network }
+        - network: { get_param: dpdk_network }
+  gen:
+    type: OS::Nova::Server
+    properties:
+      availability_zone: { get_param: availability_zone }
+      user_data:
+        get_file: prox_gen_user_data.sh
+      key_name: { get_param: key }
+      image: { get_param: image }
+      flavor: { get_param: flavor }
+      networks:
+        - network: { get_param: private_network }
+        - network: { get_param: dpdk_network }
+
+  sut_floating_ip:
+    type: OS::Nova::FloatingIP
+    properties:
+      pool: admin_floating_net
+
+  gen_floating_ip:
+    type: OS::Nova::FloatingIP
+    properties:
+      pool: admin_floating_net
+
+  sut_association:
+    type: OS::Nova::FloatingIPAssociation
+    properties:
+      floating_ip: { get_resource: sut_floating_ip }
+      server_id: { get_resource: sut }
+
+  gen_association:
+    type: OS::Nova::FloatingIPAssociation
+    properties:
+      floating_ip: { get_resource: gen_floating_ip }
+      server_id: { get_resource: gen }
+
+outputs:
+  sut_ip:
+    description: IP address of the instance
+    value: { get_attr: [sut, first_address] }
+  gen_ip:
+    description: IP address of the instance
+    value: { get_attr: [gen, first_address] }
+

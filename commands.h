@@ -72,6 +72,11 @@ void cmd_read_reg(uint8_t port_id, uint32_t id);
 void cmd_write_reg(uint8_t port_id, unsigned int id, unsigned int val);
 void cmd_set_vlan_filter(uint8_t port_id, unsigned int id, unsigned int val);
 void cmd_set_vlan_offload(uint8_t port_id, unsigned int val);
+void cmd_get_cache_class(uint32_t lcore_id, uint32_t *set);
+void cmd_get_cache_class_mask(uint32_t lcore_id, uint32_t set, uint32_t *val);
+void cmd_set_cache_class_mask(uint32_t lcore_id, uint32_t set, uint32_t val);
+void cmd_set_cache_class(uint32_t lcore_id, uint32_t set);
+void cmd_cache_reset(void);
 
 void cmd_reset_port(uint8_t port_id);
 

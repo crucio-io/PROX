@@ -230,7 +230,7 @@ static void init_task_lb_net_indexed_table(struct task_base *tbase, struct task_
 	task->worker_lut = setup_wt_indexed_table(targ, task->nb_worker_threads, socket_id);
 }
 
-static void handle_lb_net_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static int handle_lb_net_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	struct task_lb_net *task = (struct task_lb_net *)tbase;
 	uint8_t out[MAX_PKT_BURST];
@@ -252,10 +252,10 @@ static void handle_lb_net_bulk(struct task_base *tbase, struct rte_mbuf **mbufs,
 		out[j] = handle_lb_net(task, mbufs[j]);
 	}
 #endif
-	task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
+	return task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
 }
 
-static void handle_lb_net_lut_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static int handle_lb_net_lut_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	struct task_lb_net_lut *task = (struct task_lb_net_lut *)tbase;
 	uint16_t not_dropped = 0;
@@ -307,10 +307,10 @@ static void handle_lb_net_lut_bulk(struct task_base *tbase, struct rte_mbuf **mb
 			}
 		}
 	}
-	task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
+	return task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
 }
 
-static void handle_lb_net_indexed_table_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static int handle_lb_net_indexed_table_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	struct task_lb_net_lut *task = (struct task_lb_net_lut *)tbase;
 	uint8_t out[MAX_PKT_BURST];
@@ -344,7 +344,7 @@ static void handle_lb_net_indexed_table_bulk(struct task_base *tbase, struct rte
 		}
 	}
 #endif
-	task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
+	return task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
 }
 
 static inline uint8_t worker_from_mask(struct task_lb_net *task, uint32_t val)

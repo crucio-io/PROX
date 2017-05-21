@@ -49,6 +49,7 @@
 #include "prox_port_cfg.h"
 #include "defaults.h"
 #include "prox_lua.h"
+#include "cqm.h"
 
 #define MAX_RTE_ARGV 64
 #define MAX_ARG_LEN  32
@@ -66,12 +67,14 @@ static int get_rte_cfg(unsigned sindex, char *str, void *data);
 static int get_global_cfg(unsigned sindex, char *str, void *data);
 static int get_port_cfg(unsigned sindex, char *str, void *data);
 static int get_defaults_cfg(unsigned sindex, char *str, void *data);
+static int get_cache_set_cfg(unsigned sindex, char *str, void *data);
 static int get_var_cfg(unsigned sindex, char *str, void *data);
 static int get_lua_cfg(unsigned sindex, char *str, void *data);
 static int get_core_cfg(unsigned sindex, char *str, void *data);
 
 static const char *cfg_file = DEFAULT_CONFIG_FILE;
 static struct rte_cfg    rte_cfg;
+struct prox_cache_set_cfg  prox_cache_set_cfg[PROX_MAX_CACHE_SET];
 
 static char format_err_str[1024];
 static const char *err_str = "Unknown error";
@@ -98,6 +101,15 @@ static struct cfg_section var_cfg = {
 	.name   = "variables",
 	.parser = get_var_cfg,
 	.data   = 0,
+	.indexp[0]  = 0,
+	.nbindex = 1,
+	.error  = 0
+};
+
+static struct cfg_section cache_set_cfg = {
+	.name   = "cache set #",
+	.parser = get_cache_set_cfg,
+	.data   = &prox_cache_set_cfg,
 	.indexp[0]  = 0,
 	.nbindex = 1,
 	.error  = 0
@@ -164,19 +176,22 @@ static int get_rte_cfg(__attribute__((unused))unsigned sindex, char *str, void *
 	}
 
 	if (STR_EQ(str, "-m")) {
-		pconfig->memory = atoi(pkey);
-		return 0;
+		return parse_int(&pconfig->memory, pkey);
 	}
 	if (STR_EQ(str, "-n")) {
-		pconfig->force_nchannel = atoi(pkey);
-		if (pconfig->force_nchannel == 0 || pconfig->force_nchannel > 4) {
+		if (parse_int(&pconfig->force_nchannel, pkey)) {
+			return -1;
+		}
+		if (pconfig->force_nchannel == 0) {
 			set_errf("Invalid number of memory channels");
 			return -1;
 		}
 		return 0;
 	}
 	if (STR_EQ(str, "-r")) {
-		pconfig->force_nrank = atoi(pkey);
+		if (parse_int(&pconfig->force_nrank, pkey)) {
+			return -1;
+		}
 		if (pconfig->force_nrank == 0 || pconfig->force_nrank > 16) {
 			set_errf("Invalid number of memory ranks");
 			return -1;
@@ -321,6 +336,9 @@ static int get_global_cfg(__attribute__((unused))unsigned sindex, char *str, voi
 	if (STR_EQ(str, "shuffle")) {
 		return parse_flag(&pset->flags, DSF_SHUFFLE, pkey);
 	}
+	if (STR_EQ(str, "disable cmt")) {
+		return parse_flag(&pset->flags, DSF_DISABLE_CMT, pkey);
+	}
 	if (STR_EQ(str, "mp rings")) {
 		return parse_flag(&pset->flags, DSF_MP_RINGS, pkey);
 	}
@@ -418,6 +436,45 @@ static int get_defaults_cfg(__attribute__((unused)) unsigned sindex, char *str, 
 
 	set_errf("Option '%s' is not known", str);
 	return -1;
+}
+
+/* [port] parser */
+static int get_cache_set_cfg(unsigned sindex, char *str, void *data)
+{
+	struct prox_cache_set_cfg *cfg = (struct prox_cache_set_cfg *)data;
+
+	uint8_t cur_if = sindex & ~CFG_INDEXED;
+
+	if (cur_if >= PROX_MAX_CACHE_SET) {
+		set_errf("Cache set ID is too high (max allowed %d)", PROX_MAX_CACHE_SET - 1 );
+		return -1;
+	}
+
+	cfg = &prox_cache_set_cfg[cur_if];
+
+	if (str == NULL || data == NULL) {
+		return -1;
+	}
+
+	char *pkey = get_cfg_key(str);
+
+	if (pkey == NULL) {
+		set_errf("Missing key after option");
+		return -1;
+	}
+
+	if (STR_EQ(str, "mask")) {
+                uint32_t val;
+                int err = parse_int(&val, pkey);
+                if (err) {
+                        return -1;
+                }
+                cfg->mask = val;
+                cfg->socket_id = -1;
+		plog_info("\tCache set %d has mask %x\n", cur_if, cfg->mask);
+                return 0;
+	}
+        return 0;
 }
 
 /* [port] parser */
@@ -573,7 +630,10 @@ static int get_core_cfg(unsigned sindex, char *str, void *data)
 	set_self_var(buff);
 	if (STR_EQ(str, "task")) {
 
-		uint32_t val = atoi(pkey);
+		uint32_t val;
+		if (parse_int(&val, pkey)) {
+			return -1;
+		}
 		if (val >= MAX_TASKS_PER_CORE) {
 			set_errf("Too many tasks for core (max allowed %d)", MAX_TASKS_PER_CORE - 1);
 			return -1;
@@ -594,6 +654,10 @@ static int get_core_cfg(unsigned sindex, char *str, void *data)
 	}
 
 	struct task_args *targ = &lconf->targs[lconf->active_task];
+	if (STR_EQ(str, "forward arp replies")) {
+		targ->task_init->flag_features |= TASK_FEATURE_SENDING_ARP_REPLIES;
+		return 0;
+	}
 	if (STR_EQ(str, "tx ports from routing table")) {
 		uint32_t vals[PROX_MAX_PORTS];
 		uint32_t n_if;
@@ -711,7 +775,24 @@ static int get_core_cfg(unsigned sindex, char *str, void *data)
 	}
 
 	if (STR_EQ(str, "delay ms")) {
-		return parse_int(&targ->delay_ms, pkey);
+		if (targ->delay_us) {
+			set_errf("delay ms and delay us are mutually exclusive\n", str);
+			return -1;
+		}
+		uint32_t delay_ms;
+		int rc = parse_int(&delay_ms, pkey);
+		targ->delay_us = delay_ms * 1000;
+		return rc;
+	}
+	if (STR_EQ(str, "delay us")) {
+		if (targ->delay_us) {
+			set_errf("delay ms and delay us are mutually exclusive\n", str);
+			return -1;
+		}
+		return parse_int(&targ->delay_us, pkey);
+	}
+	if (STR_EQ(str, "random delay us")) {
+		return parse_int(&targ->random_delay_us, pkey);
 	}
 	if (STR_EQ(str, "cpe table timeout ms")) {
 		return parse_int(&targ->cpe_table_timeout_ms, pkey);
@@ -771,6 +852,9 @@ static int get_core_cfg(unsigned sindex, char *str, void *data)
 
 		return parse_flag(&targ->flags, TASK_ARG_RX_RING, pkey);
 	}
+	if (STR_EQ(str, "private")) {
+		return parse_bool(&targ->use_src, pkey);
+	}
 	if (STR_EQ(str, "use src ip")) {
 		return parse_bool(&targ->use_src, pkey);
 	}
@@ -812,7 +896,7 @@ static int get_core_cfg(unsigned sindex, char *str, void *data)
 		return parse_flag(&targ->flags, TASK_ARG_QINQ_ACL, pkey);
 	}
 	if (STR_EQ(str, "bps")) {
-		return parse_int(&targ->rate_bps, pkey);
+		return parse_u64(&targ->rate_bps, pkey);
 	}
 	if (STR_EQ(str, "random")) {
 		return parse_str(targ->rand_str[targ->n_rand_str++], pkey, sizeof(targ->rand_str[0]));
@@ -832,7 +916,7 @@ static int get_core_cfg(unsigned sindex, char *str, void *data)
 		return parse_str(targ->pcap_file, pkey, sizeof(targ->pcap_file));
 	}
 	if (STR_EQ(str, "pkt inline")) {
-		char pkey2[4096];
+		char pkey2[MAX_CFG_STRING_LEN];
 		if (parse_str(pkey2, pkey, sizeof(pkey2)) != 0) {
 			set_errf("Error while parsing pkt line, too long\n");
 			return -1;
@@ -909,7 +993,17 @@ static int get_core_cfg(unsigned sindex, char *str, void *data)
 		return parse_int(&targ->packet_id_pos, pkey);
 	}
 	if (STR_EQ(str, "probability")) {
-		return parse_int(&targ->probability, pkey);
+		float probability;
+		int rc = parse_float(&probability, pkey);
+		if (probability == 0) {
+			set_errf("Probability must be != 0\n");
+			return -1;
+		} else if (probability > 100.0) {
+			set_errf("Probability must be < 100\n");
+			return -1;
+		}
+		targ->probability = probability * 10000;
+		return rc;
 	}
 	if (STR_EQ(str, "concur conn")) {
 		return parse_int(&targ->n_concur_conn, pkey);
@@ -1125,6 +1219,10 @@ static int get_core_cfg(unsigned sindex, char *str, void *data)
 		return parse_int(&targ->etype, pkey);
 	}
 
+	if (STR_EQ(str, "cache set")) {
+		return parse_int(&lconf->cache_set, pkey);
+	}
+
 	if (STR_EQ(str, "sub mode")) {
 		const char* mode_str = targ->task_init->mode_str;
 		const char *sub_mode_str = pkey;
@@ -1174,6 +1272,9 @@ static int get_core_cfg(unsigned sindex, char *str, void *data)
 		}
 		targ->flags |= TASK_ARG_SRC_MAC_SET;
 		return 0;
+	}
+	if (STR_EQ(str, "gateway ipv4")) { /* Gateway IP address used when generating */
+		return parse_ip(&targ->gateway_ipv4, pkey);
 	}
 	if (STR_EQ(str, "local ipv4")) { /* source IP address to be used for packets */
 		return parse_ip(&targ->local_ipv4, pkey);
@@ -1669,10 +1770,11 @@ int prox_read_config_file(void)
 	}
 
 	struct cfg_section* config_sections[] = {
+		&lua_cfg          ,
 		&var_cfg          ,
 		&eal_default_cfg  ,
+		&cache_set_cfg    ,
 		&port_cfg         ,
-		&lua_cfg          ,
 		&defaults_cfg     ,
 		&settings_cfg     ,
 		&core_cfg         ,

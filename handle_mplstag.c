@@ -82,7 +82,7 @@ static inline uint8_t handle_unmpls(__attribute__((unused)) struct task_unmpls *
         }
 }
 
-static void handle_unmpls_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static int handle_unmpls_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
         struct task_unmpls *task = (struct task_unmpls *)tbase;
         uint8_t out[MAX_PKT_BURST];
@@ -101,7 +101,7 @@ static void handle_unmpls_bulk(struct task_base *tbase, struct rte_mbuf **mbufs,
                 out[j] = handle_unmpls(task, mbufs[j]);
         }
 #endif
-        task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
+        return task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
 }
 
 static struct task_init task_init_unmpls = {
@@ -136,7 +136,7 @@ static inline uint8_t handle_tagmpls(__attribute__((unused)) struct task_tagmpls
         return 0;
 }
 
-static void handle_tagmpls_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static int handle_tagmpls_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
         struct task_tagmpls *task = (struct task_tagmpls *)tbase;
         uint8_t out[MAX_PKT_BURST];
@@ -155,7 +155,7 @@ static void handle_tagmpls_bulk(struct task_base *tbase, struct rte_mbuf **mbufs
                 out[j] = handle_tagmpls(task, mbufs[j]);
         }
 #endif
-        task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
+        return task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
 }
 
 static struct task_init task_init_tagmpls = {

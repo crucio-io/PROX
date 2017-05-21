@@ -115,7 +115,7 @@ static inline uint8_t handle_decap_nsh(__attribute__((unused)) struct task_decap
 	return 0;
 }
 
-static void handle_decap_nsh_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static int handle_decap_nsh_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	struct task_decap_nsh *task = (struct task_decap_nsh *)tbase;
 	uint8_t out[MAX_PKT_BURST];
@@ -135,7 +135,7 @@ static void handle_decap_nsh_bulk(struct task_base *tbase, struct rte_mbuf **mbu
 		out[j] = handle_decap_nsh(task, mbufs[j]);
 	}
 #endif
-	task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
+	return task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
 }
 
 static void init_task_encap_nsh(__attribute__((unused)) struct task_base *tbase,
@@ -195,7 +195,7 @@ static inline uint8_t handle_encap_nsh(__attribute__((unused)) struct task_encap
 	return 0;
 }
 
-static void handle_encap_nsh_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static int handle_encap_nsh_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	struct task_encap_nsh *task = (struct task_encap_nsh *)tbase;
 	uint8_t out[MAX_PKT_BURST];
@@ -215,7 +215,7 @@ static void handle_encap_nsh_bulk(struct task_base *tbase, struct rte_mbuf **mbu
 		out[j] = handle_encap_nsh(task, mbufs[j]);
 	}
 #endif
-	task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
+	return task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
 }
 
 static struct task_init task_init_decap_nsh = {

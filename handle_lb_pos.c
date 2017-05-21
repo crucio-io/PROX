@@ -59,7 +59,7 @@ static void init_task_lb_pos(struct task_base *tbase, struct task_args *targ)
 	task->byte_offset = targ->byte_offset;
 }
 
-static void handle_lb_pos_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static int handle_lb_pos_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	struct task_lb_pos *task = (struct task_lb_pos *)tbase;
 	uint8_t out[MAX_PKT_BURST];
@@ -84,7 +84,7 @@ static void handle_lb_pos_bulk(struct task_base *tbase, struct rte_mbuf **mbufs,
 	}
 #endif
 
-	task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
+	return task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
 }
 
 union ip_port {
@@ -125,7 +125,7 @@ static uint8_t handle_lb_ip_port(struct task_lb_pos *task, struct rte_mbuf *mbuf
 	return rte_hash_crc(&ip_port.ip_port, sizeof(ip_port.ip_port), 0) % task->n_workers;
 }
 
-static void handle_lb_ip_port_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static int handle_lb_ip_port_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	struct task_lb_pos *task = (struct task_lb_pos *)tbase;
 	uint8_t out[MAX_PKT_BURST];
@@ -146,7 +146,7 @@ static void handle_lb_ip_port_bulk(struct task_base *tbase, struct rte_mbuf **mb
 	}
 #endif
 
-	task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
+	return task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
 }
 
 static struct task_init task_init_lb_pos = {

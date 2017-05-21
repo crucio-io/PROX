@@ -40,7 +40,7 @@ struct task_read {
 	struct task_base    base;
 };
 
-static void handle_read_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static int handle_read_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	struct task_read *task = (struct task_read *)tbase;
 	uint8_t out[MAX_PKT_BURST];
@@ -71,7 +71,7 @@ static void handle_read_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, u
 	}
 #endif
 
-	task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
+	return task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
 }
 
 static void init_task_read(__attribute__((unused)) struct task_base *tbase,

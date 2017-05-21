@@ -47,12 +47,12 @@
 #define DSF_LISTEN_TCP            0x00000020      /* Listen on TCP port 8474 for input */
 #define DSF_LISTEN_UDS            0x00000040      /* Listen on /tmp/prox.sock for input */
 #define DSF_DAEMON                0x00000080      /* Run process as Daemon */
-#define DSF_USE_DUMMY_DEVICES     0x00000800      /* Instead of relying on real PCI devices, create null devices instead */
-#define DSF_USE_DUMMY_CPU_TOPO    0x00001000      /* Instead of relying on the cpu topology, load a cpu toplogy that will work with all cfgs. */
-
 #define UNIQUE_MEMPOOL_PER_SOCKET 0x00000100      /* Use Only one mempool per socket, shared between all cores on that socket */
 #define DSF_KEEP_SRC_MAC          0x00000200      /* In gen mode, do not overwrite src_mac by mac of physical port */
 #define DSF_MP_RINGS              0x00000400      /* Use Multi Producer rings when possible */
+#define DSF_USE_DUMMY_DEVICES     0x00000800      /* Instead of relying on real PCI devices, create null devices instead */
+#define DSF_USE_DUMMY_CPU_TOPO    0x00001000      /* Instead of relying on the cpu topology, load a cpu toplogy that will work with all cfgs. */
+#define DSF_DISABLE_CMT           0x00002000      /* CMT disabled */
 
 #define MAX_PATH_LEN 1024
 

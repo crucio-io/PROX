@@ -35,20 +35,54 @@
 #include <inttypes.h>
 #include <stdio.h>
 
-struct cqm_features {
+#define PROX_MAX_CACHE_SET      16
+
+struct rdt_features {
+	uint8_t rdtm_supported;
+	uint8_t rdta_supported;
+	uint8_t cmt_supported;
+	uint8_t	mbm_tot_supported;
+	uint8_t	mbm_loc_supported;
+	uint8_t l3_cat_supported;
+	uint8_t l2_cat_supported;
+	uint8_t mba_supported;
+	uint32_t rdtm_max_rmid;
+	uint32_t cmt_max_rmid;
+	uint32_t cat_max_rmid;
+	uint32_t mba_max_rmid;
+	uint32_t cat_num_ways;
 	uint32_t upscaling_factor;
-	uint32_t max_rmid;
 	uint32_t event_types;
 };
 
-int cqm_is_supported(void);
+struct prox_cache_set_cfg {
+	uint32_t mask;
+	uint32_t lcore_id;
+	int32_t socket_id;
+};
 
-int cqm_get_features(struct cqm_features* feat);
+int rdt_is_supported(void);
+int cmt_is_supported(void);
+int cat_is_supported(void);
+int mbm_is_supported(void);
+int mba_is_supported(void);
+
+int rdt_get_features(struct rdt_features* feat);
 
 int cqm_assoc(uint8_t lcore_id, uint64_t rmid);
+int cqm_assoc_read(uint8_t lcore_id, uint64_t *rmid);
 
-void cqm_init_stat_core(uint8_t lcore_id);
+void rdt_init_stat_core(uint8_t lcore_id);
 
-int cqm_read_ctr(uint64_t* ret, uint64_t rmid);
+int cmt_read_ctr(uint64_t* ret, uint64_t rmid, uint8_t lcore_id);
+int mbm_read_tot_bdw(uint64_t* ret, uint64_t rmid, uint8_t lcore_id);
+int mbm_read_loc_bdw(uint64_t* ret, uint64_t rmid, uint8_t lcore_id);
+void read_rdt_info(void);
+extern struct prox_cache_set_cfg prox_cache_set_cfg[PROX_MAX_CACHE_SET];
+int cat_log_init(uint8_t lcore_id);
+int cat_set_class_mask(uint8_t lcore_id,  uint32_t set, uint32_t mask);
+int cat_get_class_mask(uint8_t lcore_id, uint32_t set, uint32_t *mask);
+void cat_reset_cache(uint32_t lcore_id);
+int cat_get_num_ways(void);
 
 #endif /* _CQM_H_ */

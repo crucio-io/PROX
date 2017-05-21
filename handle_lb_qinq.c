@@ -61,8 +61,8 @@
    worker thread. If an unsupported packet type is used, the packet is
    simply dropped. This Load balancer can only handling QinQ packets
    (i.e. packets comming from the vCPE). */
-void handle_lb_qinq_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts);
-void handle_lb_qinq_bulk_set_port(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts);
+int handle_lb_qinq_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts);
+int handle_lb_qinq_bulk_set_port(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts);
 
 struct task_lb_qinq {
 	struct task_base        base;
@@ -183,7 +183,7 @@ __attribute__((constructor)) static void reg_task_lb_qinq(void)
 
 static inline uint8_t handle_lb_qinq(struct task_lb_qinq *task, struct rte_mbuf *mbuf);
 
-void handle_lb_qinq_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+int handle_lb_qinq_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	struct task_lb_qinq *task = (struct task_lb_qinq *)tbase;
 	uint8_t out[MAX_PKT_BURST];
@@ -205,10 +205,10 @@ void handle_lb_qinq_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint1
 	}
 #endif
 
-	task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
+	return task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
 }
 
-void handle_lb_qinq_bulk_set_port(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+int handle_lb_qinq_bulk_set_port(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	struct task_lb_qinq *task = (struct task_lb_qinq *)tbase;
 	uint8_t out[MAX_PKT_BURST];
@@ -253,7 +253,7 @@ void handle_lb_qinq_bulk_set_port(struct task_base *tbase, struct rte_mbuf **mbu
 	}
 #endif
 
-	task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
+	return task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
 }
 
 struct qinq_packet {

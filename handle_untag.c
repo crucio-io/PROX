@@ -55,7 +55,7 @@ static void init_task_untag(struct task_base *tbase, __attribute__((unused)) str
 
 static inline uint8_t handle_untag(struct task_untag *task, struct rte_mbuf *mbuf);
 
-static void handle_untag_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static int handle_untag_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	struct task_untag *task = (struct task_untag *)tbase;
 	uint8_t out[MAX_PKT_BURST];
@@ -64,20 +64,20 @@ static void handle_untag_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, 
 	prefetch_first(mbufs, n_pkts);
 
 	for (j = 0; j + PREFETCH_OFFSET < n_pkts; ++j) {
-#ifdef BRAS_PREFETCH_OFFSET
+#ifdef PROX_PREFETCH_OFFSET
 		PREFETCH0(mbufs[j + PREFETCH_OFFSET]);
 		PREFETCH0(rte_pktmbuf_mtod(mbufs[j + PREFETCH_OFFSET - 1], void *));
 #endif
 		out[j] = handle_untag(task, mbufs[j]);
 	}
-#ifdef BRAS_PREFETCH_OFFSET
+#ifdef PROX_PREFETCH_OFFSET
 	PREFETCH0(rte_pktmbuf_mtod(mbufs[n_pkts - 1], void *));
 	for (; j < n_pkts; ++j) {
 		out[j] = handle_untag(task, mbufs[j]);
 	}
 #endif
 
-	task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
+	return task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
 }
 
 static inline uint8_t untag_mpls(struct rte_mbuf *mbuf, struct ether_hdr *peth)
@@ -123,7 +123,7 @@ static inline uint8_t handle_untag(struct task_untag *task, struct rte_mbuf *mbu
 	const uint16_t etype = peth->ether_type;
 
 	if (etype != task->etype) {
-		plog_warn("Failed Removing MPLS: ether_type = %#06x\n", peth->ether_type);
+		plog_warn("Failed Removing %04x tag: ether_type = %#06x\n", task->etype, peth->ether_type);
 		return OUT_DISCARD;
 	}
 

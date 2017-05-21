@@ -45,6 +45,7 @@ static struct display_column *type_col;
 
 static struct display_column *no_mbufs_col;
 static struct display_column *ierrors_col;
+static struct display_column *imissed_col;
 static struct display_column *oerrors_col;
 static struct display_column *rx_col;
 static struct display_column *tx_col;
@@ -88,6 +89,7 @@ static void display_ports_draw_frame(struct screen_state *state)
 		display_table_init(stats, "Statistics per second");
 		no_mbufs_col = display_table_add_col(stats);
 		ierrors_col = display_table_add_col(stats);
+		imissed_col = display_table_add_col(stats);
 		oerrors_col = display_table_add_col(stats);
 		rx_col = display_table_add_col(stats);
 		tx_col = display_table_add_col(stats);
@@ -98,6 +100,7 @@ static void display_ports_draw_frame(struct screen_state *state)
 
 		display_column_init(no_mbufs_col, "no mbufs (#)", 12);
 		display_column_init(ierrors_col, "ierrors (#)", 12);
+		display_column_init(imissed_col, "imissed (#)", 12);
 		display_column_init(oerrors_col, "oerrors (#)", 12);
 		display_column_init(rx_col, "RX (Kpps)", 10);
 		display_column_init(tx_col, "TX (Kpps)", 10);
@@ -109,12 +112,14 @@ static void display_ports_draw_frame(struct screen_state *state)
 		display_table_init(stats, "Total statistics");
 		no_mbufs_col = display_table_add_col(stats);
 		ierrors_col = display_table_add_col(stats);
+		imissed_col = display_table_add_col(stats);
 		oerrors_col = display_table_add_col(stats);
 		rx_col = display_table_add_col(stats);
 		tx_col = display_table_add_col(stats);
 
 		display_column_init(no_mbufs_col, "no mbufs (#)", 13);
 		display_column_init(ierrors_col, "ierrors (#)", 13);
+		display_column_init(imissed_col, "imissed (#)", 13);
 		display_column_init(oerrors_col, "oerrors (#)", 13);
 		display_column_init(rx_col, "RX (#)", 13);
 		display_column_init(tx_col, "TX (#)", 13);
@@ -172,19 +177,43 @@ static void display_ports_draw_per_sec_stats(void)
 
 		uint64_t no_mbufs_rate = val_to_rate(last->no_mbufs - prev->no_mbufs, delta_t);
 		uint64_t ierrors_rate = val_to_rate(last->ierrors - prev->ierrors, delta_t);
+		uint64_t imissed_rate = val_to_rate(last->imissed - prev->imissed, delta_t);
 		uint64_t oerrors_rate = val_to_rate(last->oerrors - prev->oerrors, delta_t);
 
 		uint64_t rx_kbps_rate = val_to_rate((last->rx_bytes - prev->rx_bytes) * 8, delta_t) / 1000;
 		uint64_t tx_kbps_rate = val_to_rate((last->tx_bytes - prev->tx_bytes) * 8, delta_t) / 1000;
 
 		uint64_t rx_rate = val_to_rate(last->rx_tot - prev->rx_tot, delta_t) / 1000;
+		if (unlikely(prev->rx_tot > last->rx_tot))
+			rx_rate = 0;
 		uint64_t tx_rate = val_to_rate(last->tx_tot - prev->tx_tot, delta_t) / 1000;
+		if (unlikely(prev->tx_tot > last->tx_tot))
+			tx_rate = 0;
 
-		struct percent rx_percent = calc_percent(last->rx_bytes - prev->rx_bytes, delta_t);
-		struct percent tx_percent = calc_percent(last->tx_bytes - prev->tx_bytes, delta_t);
+		/* Take 20 bytes overhead (or 24 if crc strip is enabled) into accound */
+		struct percent rx_percent;
+		struct percent tx_percent;
+		if (strcmp(prox_port_cfg[port_id].short_name, "i40e") == 0) {
+			if (prox_port_cfg[port_id].port_conf.rxmode.hw_strip_crc == 1) {
+				rx_percent = calc_percent(last->rx_bytes - prev->rx_bytes + 24 * (last->rx_tot - prev->rx_tot), delta_t);
+				tx_percent = calc_percent(last->tx_bytes - prev->tx_bytes + 24 * (last->tx_tot - prev->tx_tot), delta_t);
+			} else {
+				rx_percent = calc_percent(last->rx_bytes - prev->rx_bytes + 20 * (last->rx_tot - prev->rx_tot), delta_t);
+				tx_percent = calc_percent(last->tx_bytes - prev->tx_bytes + 20 * (last->tx_tot - prev->tx_tot), delta_t);
+			}
+		} else {
+			if (prox_port_cfg[port_id].port_conf.rxmode.hw_strip_crc == 1) {
+				rx_percent = calc_percent(last->rx_bytes - prev->rx_bytes + 24 * (last->rx_tot - prev->rx_tot), delta_t);
+				tx_percent = calc_percent(last->tx_bytes - prev->tx_bytes + 24 * (last->tx_tot - prev->tx_tot), delta_t);
+			} else {
+				rx_percent = calc_percent(last->rx_bytes - prev->rx_bytes + 20 * (last->rx_tot - prev->rx_tot), delta_t);
+				tx_percent = calc_percent(last->tx_bytes - prev->tx_bytes + 20 * (last->tx_tot - prev->tx_tot), delta_t);
+			}
+		}
 
 		display_column_print(no_mbufs_col, i, "%lu", no_mbufs_rate);
 		display_column_print(ierrors_col, i, "%lu", ierrors_rate);
+		display_column_print(imissed_col, i, "%lu", imissed_rate);
 		display_column_print(oerrors_col, i, "%lu", oerrors_rate);
 
 		display_column_print(rx_bytes_col, i, "%lu", rx_kbps_rate);
@@ -205,6 +234,7 @@ static void display_ports_draw_total_stats(void)
 
 		display_column_print(no_mbufs_col, i, "%lu", last->no_mbufs);
 		display_column_print(ierrors_col, i, "%lu", last->ierrors);
+		display_column_print(imissed_col, i, "%lu", last->imissed);
 		display_column_print(oerrors_col, i, "%lu", last->oerrors);
 		display_column_print(rx_col, i, "%lu", last->rx_tot);
 		display_column_print(tx_col, i, "%lu", last->tx_tot);

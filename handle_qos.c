@@ -66,9 +66,10 @@ uint32_t task_qos_n_pkts_buffered(struct task_base *tbase)
 	return task->nb_buffered_pkts;
 }
 
-static inline void handle_qos_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static inline int handle_qos_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	struct task_qos *task = (struct task_qos *)tbase;
+	int ret = 0;
 
 	if (n_pkts) {
 		if (task->runtime_flags & TASK_CLASSIFY) {
@@ -128,9 +129,10 @@ static inline void handle_qos_bulk(struct task_base *tbase, struct rte_mbuf **mb
 		n_pkts = rte_sched_port_dequeue(task->sched_port, mbufs, 32);
 		if (likely(n_pkts)) {
 			task->nb_buffered_pkts -= n_pkts;
-			task->base.tx_pkt(&task->base, mbufs, n_pkts, NULL);
+			ret = task->base.tx_pkt(&task->base, mbufs, n_pkts, NULL);
 		}
 	}
+	return ret;
 }
 
 static void init_task_qos(struct task_base *tbase, struct task_args *targ)

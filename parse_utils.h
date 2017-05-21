@@ -82,6 +82,9 @@ int parse_list_set(uint32_t *list, const char *str, uint32_t max_limit);
 int parse_task_set(struct core_task_set *val, const char *str);
 
 int parse_int(uint32_t* val, const char *str);
+int parse_float(float* val, const char *str);
+
+int parse_u64(uint64_t* val, const char *str);
 
 int parse_str(char* dst, const char *str, size_t max_len);
 

@@ -114,6 +114,7 @@ void stats_global_post_proc(void)
 
 	stats_task_get_host_rx_tx_packets(rx, tx, tsc);
 	global_stats.sample[last_stat].nics_ierrors    = stats_port_get_ierrors();
+	global_stats.sample[last_stat].nics_imissed    = stats_port_get_imissed();
 	global_stats.sample[last_stat].nics_rx_packets = stats_port_get_rx_packets();
 	global_stats.sample[last_stat].nics_tx_packets = stats_port_get_tx_packets();
 

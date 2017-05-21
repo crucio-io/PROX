@@ -124,6 +124,13 @@ static void init_task_routing(struct task_base *tbase, struct task_args *targ)
 	task->next_hops = lpm->next_hops;
 	task->number_free_rules = lpm->n_free_rules;
 
+	for (uint32_t i = 0; i < MAX_HOP_INDEX; i++) {
+		int tx_port = task->next_hops[i].mac_port.out_idx;
+		if ((tx_port > targ->nb_txports - 1) && (tx_port > targ->nb_txrings - 1)) {
+			PROX_PANIC(1, "Routing Table contains port %d but only %d tx port/ %d ring:\n", tx_port, targ->nb_txports, targ->nb_txrings);
+		}
+	}
+
 	struct task_args *dtarg;
 	struct core_task ct;
 	for (uint32_t i = 0; i < targ->nb_txrings || i < targ->nb_txports; ++i) {
@@ -144,7 +151,7 @@ static void init_task_routing(struct task_base *tbase, struct task_args *targ)
 
 	struct prox_port_cfg *port = find_reachable_port(targ);
 	if (port) {
-		task->offload_crc = port->capabilities.tx_offload_ipv4_cksum;
+		task->offload_crc = port->capabilities.tx_offload_cksum;
 	}
 
 	targ->lconf->ctrl_func_m[targ->task] = routing_update;
@@ -153,7 +160,7 @@ static void init_task_routing(struct task_base *tbase, struct task_args *targ)
 
 static inline uint8_t handle_routing(struct task_routing *task, struct rte_mbuf *mbuf);
 
-static void handle_routing_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static int handle_routing_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	struct task_routing *task = (struct task_routing *)tbase;
 	uint8_t out[MAX_PKT_BURST];
@@ -175,7 +182,7 @@ static void handle_routing_bulk(struct task_base *tbase, struct rte_mbuf **mbufs
 	}
 #endif
 
-	task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
+	return task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
 }
 
 static void set_l2(struct task_routing *task, struct rte_mbuf *mbuf, uint8_t nh_idx)
@@ -235,7 +242,7 @@ static uint8_t route_ipv4(struct task_routing *task, uint8_t *beg, uint32_t ip_o
 		return OUT_DISCARD;
 	}
 
-#ifdef RTE_VER_YEAR
+#if RTE_VERSION >= RTE_VERSION_NUM(16,4,0,1)
 	uint32_t next_hop_index;
 #else
 	uint8_t next_hop_index;

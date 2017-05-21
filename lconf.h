@@ -99,6 +99,7 @@ struct lcore_cfg {
 	char			name[MAX_NAME_SIZE];
 	struct task_args        targs[MAX_TASKS_PER_CORE];
 	int (*thread_x)(struct lcore_cfg *lconf);
+	uint32_t		cache_set;
 } __rte_cache_aligned;
 
 extern struct lcore_cfg     *lcore_cfg;

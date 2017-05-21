@@ -366,6 +366,17 @@ int lua_to_string(struct lua_State *L, enum lua_place from, const char *name, ch
 	return 0;
 }
 
+int lua_to_port(struct lua_State *L, enum lua_place from, const char *name, uint16_t *port)
+{
+	double tmp = 0;
+	int ret;
+
+	ret = lua_to_double(L, from, name, &tmp);
+	if (ret == 0)
+		*port = tmp;
+	return ret;
+}
+
 int lua_to_int(struct lua_State *L, enum lua_place from, const char *name, uint32_t *val)
 {
 	double tmp = 0;
@@ -415,7 +426,6 @@ int lua_to_routes4_entry(struct lua_State *L, enum lua_place from, const char *n
 	return 0;
 }
 
-#define MAX_HOP_INDEX	128
 int lua_to_next_hop(struct lua_State *L, enum lua_place from, const char *name, uint8_t socket, struct next_hop **nh)
 {
 	struct next_hop *ret;
@@ -533,10 +543,11 @@ int lua_to_routes4(struct lua_State *L, enum lua_place from, const char *name, u
 	n_tot_rules = lua_tointeger(L, -1);
 	n_loaded_rules = 0;
 	lua_pop(L, 1);
-#ifdef RTE_VER_YEAR
+#if RTE_VERSION >= RTE_VERSION_NUM(16,4,0,1)
 	struct rte_lpm_config conf;
 	conf.max_rules = 2 * n_tot_rules;
 	conf.number_tbl8s = 256;
+	conf.flags = 0;
 	new_lpm = rte_lpm_create(lpm_name, socket, &conf);
 #else
 	new_lpm = rte_lpm_create(lpm_name, socket, 2 * n_tot_rules, 0);
@@ -1117,12 +1128,14 @@ int lua_to_tuples(struct lua_State *L, enum lua_place from, const char *name, ui
 		.hash_func_init_val = 0,
 	};
 
-	/* create ipv4 hash */
+	/* create lb_5tuple hash - same hash is shared between cores on same socket */
 	snprintf(s, sizeof(s), "ipv4_l3fwd_hash_%d", socket);
-	ipv4_l3fwd_hash_params.name = s;
-	ipv4_l3fwd_hash_params.socket_id = socket;
-	*lookup_hash = rte_hash_create(&ipv4_l3fwd_hash_params);
-	PROX_PANIC(*lookup_hash == NULL, "Unable to create the l3fwd hash\n");
+	if ((*lookup_hash = rte_hash_find_existing(s)) == NULL) {
+		ipv4_l3fwd_hash_params.name = s;
+		ipv4_l3fwd_hash_params.socket_id = socket;
+		*lookup_hash = rte_hash_create(&ipv4_l3fwd_hash_params);
+		PROX_PANIC(*lookup_hash == NULL, "Unable to create the lb_5tuple hash\n");
+	}
 
 	lua_pushnil(L);
 	while (lua_next(L, -2)) {

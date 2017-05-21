@@ -70,7 +70,7 @@ struct qos_cfg {
 };
 
 enum task_mode {NOT_SET, MASTER, QINQ_DECAP4, QINQ_DECAP6,
-		QINQ_ENCAP4, QINQ_ENCAP6, GRE_DECAP, GRE_ENCAP,
+		QINQ_ENCAP4, QINQ_ENCAP6, GRE_DECAP, GRE_ENCAP,CGNAT,
 };
 
 struct task_args;
@@ -81,7 +81,7 @@ struct task_init {
 	char sub_mode_str[32];
 	void (*early_init)(struct task_args *targ);
 	void (*init)(struct task_base *tbase, struct task_args *targ);
-	void (*handle)(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts);
+	int (*handle)(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts);
 	void (*start)(struct task_base *tbase);
 	void (*stop)(struct task_base *tbase);
 	void (*start_first)(struct task_base *tbase);
@@ -90,12 +90,12 @@ struct task_init {
 	struct flow_iter flow_iter;
 	size_t size;
 	uint16_t     flag_req_data; /* flags from prox_shared.h */
-	uint32_t     flag_features;
+	uint64_t     flag_features;
 	uint32_t mbuf_size;
 	LIST_ENTRY(task_init) entries;
 };
 
-static int task_init_flag_set(struct task_init *task_init, uint32_t flag)
+static int task_init_flag_set(struct task_init *task_init, uint64_t flag)
 {
 	return !!(task_init->flag_features & flag);
 }
@@ -137,6 +137,7 @@ struct task_args {
 	uint8_t                tot_rxrings;
 	uint8_t                nb_rxports;
 	uint32_t               byte_offset;
+	uint32_t               gateway_ipv4;
 	uint32_t               local_ipv4;
 	struct ipv6_addr       local_ipv6;    /* For IPv6 Tunnel, it's the local tunnel endpoint address */
 	struct rte_ring        *rx_rings[MAX_RINGS_PER_TASK];
@@ -174,7 +175,8 @@ struct task_args {
 	enum police_action     police_act[3][3];
 	uint32_t               marking[4];
 	uint32_t               n_max_rules;
-	uint32_t               delay_ms;
+	uint32_t               random_delay_us;
+	uint32_t               delay_us;
 	uint32_t               cpe_table_timeout_ms;
 	uint32_t               etype;
 #ifdef GRE_TP
@@ -187,7 +189,7 @@ struct task_args {
 	uint8_t                lb_friend_core;
 	uint8_t                lb_friend_task;
 	/* gen related*/
-	uint32_t               rate_bps;
+	uint64_t               rate_bps;
 	uint32_t               n_rand_str;
 	char                   rand_str[64][64];
 	uint32_t               rand_offset[64];
@@ -222,6 +224,15 @@ struct task_args {
 	uint32_t               n_dpi_engine_args;
 	uint32_t               generator_id;
 	uint32_t               accuracy_limit_nsec;
+	/* cgnat related */
+	uint32_t                     public_ip_count;
+	struct public_ip_config_info *public_ip_config_info;
+	struct public_entry          *public_entries;
+	struct private_flow_entry    *private_flow_entries;
+	struct rte_hash              *public_ip_port_hash;
+	struct rte_hash              *private_ip_port_hash;
+	struct rte_hash              *private_ip_hash;
+	struct private_ip_info       *private_ip_info;
 };
 
 /* Return the first port that is reachable through the task. If the

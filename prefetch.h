@@ -58,7 +58,7 @@ static inline void prefetch_pkts(__attribute__((unused)) struct rte_mbuf **mbufs
 		PREFETCH0(rte_pktmbuf_mtod(mbufs[j - PROX_PREFETCH_OFFSET], void*));
 	}
 	for (uint16_t j = n_pkts - PROX_PREFETCH_OFFSET; j < n_pkts; ++j) {
-		PREFETCH0(rte_pktmbuf_mtod(mbufs[n_pkts - 1], void*));
+		PREFETCH0(rte_pktmbuf_mtod(mbufs[j], void*));
 	}
 #endif
 }

@@ -67,7 +67,7 @@ void init_pipe_check(struct task_pipe *tpipe, struct task_args *targ);
 
 /* This function will panic on purpose: tasks based on Packet Framework
    pipelines should not be invoked via the usual task_base.handle_bulk method */
-void handle_pipe(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts);
+int handle_pipe(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts);
 
 /* The pipeline thread can only run tasks based on Packet Framework pipelines */
 int thread_pipeline(struct lcore_cfg *lconf);

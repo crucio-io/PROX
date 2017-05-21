@@ -83,7 +83,7 @@ struct qinq_gre_map *get_qinq_gre_map(struct task_args *targ)
 }
 
 /* Encapsulate IPv4 packets in QinQ. QinQ tags are derived from gre_id. */
-void handle_qinq_encap4_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts);
+int handle_qinq_encap4_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts);
 static void arp_msg(struct task_base *tbase, void **data, uint16_t n_msgs);
 
 static void fill_table(struct task_args *targ, struct rte_table_hash *table)
@@ -165,7 +165,7 @@ static void init_task_qinq_encap4(struct task_base *tbase, struct task_args *tar
 
 	struct prox_port_cfg *port = find_reachable_port(targ);
 	if (port) {
-		task->offload_crc = port->capabilities.tx_offload_ipv4_cksum;
+		task->offload_crc = port->capabilities.tx_offload_cksum;
 	}
 
 	/* TODO: check if it is not necessary to limit reverse mapping
@@ -400,7 +400,7 @@ static inline void restore_cpe(struct cpe_pkt *packet, struct cpe_data *table, _
 static inline uint8_t handle_qinq_encap4(struct task_qinq_encap4 *task, struct cpe_pkt *cpe_pkt, struct rte_mbuf *mbuf, struct cpe_data *entry);
 
 /* Same functionality as handle_qinq_encap_v4_bulk but untag MPLS as well. */
-static void handle_qinq_encap4_untag_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static int handle_qinq_encap4_untag_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	struct task_qinq_encap4 *task = (struct task_qinq_encap4 *)tbase;
 	uint8_t out[MAX_PKT_BURST];
@@ -416,7 +416,7 @@ static void handle_qinq_encap4_untag_bulk(struct task_base *tbase, struct rte_mb
 		}
 	}
 
-	task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
+	return task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
 }
 
 static inline void extract_key_bulk(struct task_qinq_encap4 *task, struct rte_mbuf **mbufs, uint16_t n_pkts)
@@ -435,7 +435,7 @@ __attribute__((cold)) static void handle_error(struct rte_mbuf *mbuf)
 	plogx_dbg("Unknown IP %x/gre_id %x\n", dst_ip, le_gre_id);
 }
 
-static void handle_qinq_encap4_bulk_pe(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static int handle_qinq_encap4_bulk_pe(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	struct task_qinq_encap4 *task = (struct task_qinq_encap4 *)tbase;
 	uint64_t pkts_mask = RTE_LEN2MASK(n_pkts, uint64_t);
@@ -479,9 +479,9 @@ static void handle_qinq_encap4_bulk_pe(struct task_base *tbase, struct rte_mbuf 
 		}
 	}
 
-	task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
+	return task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
 }
-void handle_qinq_encap4_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+int handle_qinq_encap4_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	struct task_qinq_encap4 *task = (struct task_qinq_encap4 *)tbase;
 	uint64_t pkts_mask = RTE_LEN2MASK(n_pkts, uint64_t);
@@ -525,7 +525,7 @@ void handle_qinq_encap4_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, u
 		}
 	}
 
-	task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
+	return task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
 }
 
 static inline uint8_t handle_qinq_encap4(struct task_qinq_encap4 *task, struct cpe_pkt *cpe_pkt, struct rte_mbuf *mbuf, struct cpe_data *entry)

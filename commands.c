@@ -49,6 +49,8 @@
 #include "quit.h"
 #include "input.h"
 #include "rw_reg.h"
+#include "cqm.h"
+#include "stats_core.h"
 
 void start_core_all(int task_id)
 {
@@ -94,6 +96,26 @@ static void warn_inactive_cores(uint32_t *cores, int count, const char *prefix)
 	}
 }
 
+static inline int wait_command_handled(struct lcore_cfg *lconf)
+{
+	uint64_t t1 = rte_rdtsc(), t2;
+	while (lconf_is_req(lconf)) {
+		t2 = rte_rdtsc();
+		if (t2 - t1 > 5 * rte_get_tsc_hz()) {
+			// Failed to handle command ...
+			for (uint8_t task_id = 0; task_id < lconf->n_tasks_all; ++task_id) {
+				struct task_args *targs = &lconf->targs[task_id];
+				if (!(targs->flags & TASK_ARG_DROP)) {
+					plogx_err("Failed to handle command - task is in NO_DROP and might be stuck...\n");
+					return - 1;
+				}
+			}
+			plogx_err("Failed to handle command\n");
+			return -1;
+		}
+	}
+	return 0;
+}
 void start_cores(uint32_t *cores, int count, int task_id)
 {
 	int n_started_cores = 0;
@@ -127,7 +149,7 @@ void start_cores(uint32_t *cores, int count, int task_id)
 	for (int i = 0; i < n_started_cores; ++i) {
 		struct lcore_cfg *lconf = &lcore_cfg[started_cores[i]];
 		plog_info("Waiting for core %u to start...", started_cores[i]);
-		while (lconf_is_req(lconf)) ;
+		if (wait_command_handled(lconf) == -1) return;
 		plog_info(" OK\n");
 	}
 }
@@ -143,7 +165,7 @@ void stop_cores(uint32_t *cores, int count, int task_id)
 	for (int i = 0; i < count; ++i) {
 		struct lcore_cfg *lconf = &lcore_cfg[cores[i]];
 		if (lconf->n_tasks_run) {
-			while (lconf_is_req(lconf));
+			if (wait_command_handled(lconf) == -1) return;
 
 			lconf->msg.type = LCONF_MSG_STOP;
 			lconf->msg.task_id = task_id;
@@ -155,7 +177,7 @@ void stop_cores(uint32_t *cores, int count, int task_id)
 	for (int i = 0; i < n_stopped_cores; ++i) {
 		c = stopped_cores[i];
 		struct lcore_cfg *lconf = &lcore_cfg[c];
-		while (lconf_is_req(lconf));
+		if (wait_command_handled(lconf) == -1) return;
 
 		if (lconf->n_tasks_run == 0) {
 			plog_info("All tasks stopped on core %u, waiting for core to stop...", c);
@@ -271,7 +293,7 @@ void cmd_dump(uint8_t lcore_id, uint8_t task_id, uint32_t nb_packets, struct inp
 
 		lconf->tasks_all[task_id]->aux->task_rt_dump.input = input;
 
-		while (lconf_is_req(lconf));
+		if (wait_command_handled(lconf) == -1) return;
 		if (rx && tx)
 			lconf->msg.type = LCONF_MSG_DUMP;
 		else if (rx)
@@ -303,7 +325,7 @@ void cmd_trace(uint8_t lcore_id, uint8_t task_id, uint32_t nb_packets)
 	else {
 		struct lcore_cfg *lconf = &lcore_cfg[lcore_id];
 
-		while (lconf_is_req(lconf));
+		if (wait_command_handled(lconf) == -1) return;
 
 		lconf->msg.type = LCONF_MSG_TRACE;
 		lconf->msg.task_id = task_id;
@@ -326,7 +348,7 @@ void cmd_rx_bw_start(uint32_t lcore_id)
 
 		struct lcore_cfg *lconf = &lcore_cfg[lcore_id];
 
-		while (lconf_is_req(lconf));
+		if (wait_command_handled(lconf) == -1) return;
 		lconf->msg.type = LCONF_MSG_RX_BW_START;
 		lconf_set_req(lconf);
 
@@ -346,7 +368,7 @@ void cmd_tx_bw_start(uint32_t lcore_id)
 
 		struct lcore_cfg *lconf = &lcore_cfg[lcore_id];
 
-		while (lconf_is_req(lconf));
+		if (wait_command_handled(lconf) == -1) return;
 		lconf->msg.type = LCONF_MSG_TX_BW_START;
 		lconf_set_req(lconf);
 
@@ -366,7 +388,7 @@ void cmd_rx_bw_stop(uint32_t lcore_id)
 
 		struct lcore_cfg *lconf = &lcore_cfg[lcore_id];
 
-		while (lconf_is_req(lconf));
+		if (wait_command_handled(lconf) == -1) return;
 		lconf->msg.type = LCONF_MSG_RX_BW_STOP;
 		lconf_set_req(lconf);
 
@@ -386,7 +408,7 @@ void cmd_tx_bw_stop(uint32_t lcore_id)
 
 		struct lcore_cfg *lconf = &lcore_cfg[lcore_id];
 
-		while (lconf_is_req(lconf));
+		if (wait_command_handled(lconf) == -1) return;
 		lconf->msg.type = LCONF_MSG_TX_BW_STOP;
 		lconf_set_req(lconf);
 
@@ -404,7 +426,7 @@ void cmd_rx_distr_start(uint32_t lcore_id)
 	} else {
 		struct lcore_cfg *lconf = &lcore_cfg[lcore_id];
 
-		while (lconf_is_req(lconf));
+		if (wait_command_handled(lconf) == -1) return;
 		lconf->msg.type = LCONF_MSG_RX_DISTR_START;
 		lconf_set_req(lconf);
 
@@ -423,7 +445,7 @@ void cmd_tx_distr_start(uint32_t lcore_id)
 	} else {
 		struct lcore_cfg *lconf = &lcore_cfg[lcore_id];
 
-		while (lconf_is_req(lconf));
+		if (wait_command_handled(lconf) == -1) return;
 		lconf->msg.type = LCONF_MSG_TX_DISTR_START;
 		lconf_set_req(lconf);
 
@@ -442,7 +464,7 @@ void cmd_rx_distr_stop(uint32_t lcore_id)
 	} else {
 		struct lcore_cfg *lconf = &lcore_cfg[lcore_id];
 
-		while (lconf_is_req(lconf));
+		if (wait_command_handled(lconf) == -1) return;
 		lconf->msg.type = LCONF_MSG_RX_DISTR_STOP;
 		lconf_set_req(lconf);
 
@@ -461,7 +483,7 @@ void cmd_tx_distr_stop(uint32_t lcore_id)
 	} else {
 		struct lcore_cfg *lconf = &lcore_cfg[lcore_id];
 
-		while (lconf_is_req(lconf));
+		if (wait_command_handled(lconf) == -1) return;
 		lconf->msg.type = LCONF_MSG_TX_DISTR_STOP;
 		lconf_set_req(lconf);
 
@@ -478,7 +500,7 @@ void cmd_rx_distr_rst(uint32_t lcore_id)
 	} else {
 		struct lcore_cfg *lconf = &lcore_cfg[lcore_id];
 
-		while (lconf_is_req(lconf));
+		if (wait_command_handled(lconf) == -1) return;
 		lconf->msg.type = LCONF_MSG_RX_DISTR_RESET;
 		lconf_set_req(lconf);
 
@@ -495,7 +517,7 @@ void cmd_tx_distr_rst(uint32_t lcore_id)
 	} else {
 		struct lcore_cfg *lconf = &lcore_cfg[lcore_id];
 
-		while (lconf_is_req(lconf));
+		if (wait_command_handled(lconf) == -1) return;
 		lconf->msg.type = LCONF_MSG_TX_DISTR_RESET;
 		lconf_set_req(lconf);
 
@@ -618,6 +640,44 @@ void cmd_port_down(uint8_t port_id)
 
 void cmd_xstats(uint8_t port_id)
 {
+#if RTE_VERSION >= RTE_VERSION_NUM(16,7,0,0)
+	int n_xstats;
+	struct rte_eth_xstat *eth_xstat = NULL;	// id and value
+	struct rte_eth_xstat_name *eth_xstat_name = NULL;	// only names
+	struct prox_port_cfg* port_cfg = &prox_port_cfg[port_id];
+	int rc;
+
+	n_xstats = rte_eth_xstats_get(port_id, NULL, 0);
+	eth_xstat_name = prox_zmalloc(n_xstats * sizeof(*eth_xstat_name), port_cfg->socket);
+	PROX_ASSERT(eth_xstat_name);
+	rc = rte_eth_xstats_get_names(port_id, eth_xstat_name, n_xstats);
+	if ((rc < 0) || (rc > n_xstats)) {
+		if (rc < 0) {
+			plog_warn("Failed to get xstats_names on port %d with error %d\n", port_id, rc);
+		} else if (rc > n_xstats) {
+			plog_warn("Failed to get xstats_names on port %d: too many xstats (%d)\n", port_id, rc);
+		}
+	}
+
+	eth_xstat = prox_zmalloc(n_xstats * sizeof(*eth_xstat), port_cfg->socket);
+	PROX_ASSERT(eth_xstat);
+	rc = rte_eth_xstats_get(port_id, eth_xstat, n_xstats);
+	if ((rc < 0) || (rc > n_xstats)) {
+		if (rc < 0) {
+			plog_warn("Failed to get xstats on port %d with error %d\n", port_id, rc);
+		} else if (rc > n_xstats) {
+			plog_warn("Failed to get xstats on port %d: too many xstats (%d)\n", port_id, rc);
+		}
+	} else {
+		for (int i=0;i<rc;i++) {
+			plog_info("%s: %ld\n", eth_xstat_name[i].name, eth_xstat[i].value);
+		}
+	}
+	if (eth_xstat_name)
+		prox_free(eth_xstat_name);
+	if (eth_xstat)
+		prox_free(eth_xstat);
+#else
 #if RTE_VERSION >= RTE_VERSION_NUM(2,1,0,0)
 	int n_xstats;
 	struct rte_eth_xstats *eth_xstats;
@@ -639,8 +699,11 @@ void cmd_xstats(uint8_t port_id)
 			plog_info("%s: %ld\n", eth_xstats[i].name, eth_xstats[i].value);
 		}
 	}
+	if (eth_xstats)
+		prox_free(eth_xstats);
 #else
 	plog_warn("Failed to get xstats, xstats are not supported in this version of dpdk\n");
+#endif
 #endif
 }
 
@@ -827,4 +890,62 @@ void cmd_rx_tx_info(void)
 			plog_info("\n");
 		}
 	}
+}
+void cmd_get_cache_class(uint32_t lcore_id, uint32_t *set)
+{
+	uint64_t tmp_rmid = 0;
+	cqm_assoc_read(lcore_id, &tmp_rmid);
+	*set = (uint32_t)(tmp_rmid >> 32);
+}
+
+void cmd_get_cache_class_mask(uint32_t lcore_id, uint32_t set, uint32_t *val)
+{
+	cat_get_class_mask(lcore_id, set, val);
+}
+
+void cmd_set_cache_class_mask(uint32_t lcore_id, uint32_t set, uint32_t val)
+{
+	cat_set_class_mask(lcore_id, set, val);
+	lcore_cfg[lcore_id].cache_set = set;
+	uint32_t id = -1;
+	while(prox_core_next(&id, 0) == 0) {
+		if ((lcore_cfg[id].cache_set == set) && (rte_lcore_to_socket_id(id) == rte_lcore_to_socket_id(lcore_id))) {
+			plog_info("Updating mask for core %d to %d\n", id, set);
+			stats_update_cache_mask(id, val);
+		}
+	}
+}
+
+void cmd_set_cache_class(uint32_t lcore_id, uint32_t set)
+{
+	uint64_t tmp_rmid = 0;
+	uint32_t val = 0;
+	cqm_assoc_read(lcore_id, &tmp_rmid);
+	cqm_assoc(lcore_id, (tmp_rmid & 0xffffffff) | ((set * 1L) << 32));
+	cat_get_class_mask(lcore_id, set, &val);
+	stats_update_cache_mask(lcore_id, val);
+}
+
+void cmd_cache_reset(void)
+{
+	uint8_t sockets[MAX_SOCKETS] = {0};
+	uint8_t cores[MAX_SOCKETS] = {0};
+	uint32_t mask = (1 << cat_get_num_ways()) - 1;
+	uint32_t lcore_id = -1, socket_id;
+	while(prox_core_next(&lcore_id, 0) == 0) {
+		cqm_assoc(lcore_id, 0);
+		socket_id = rte_lcore_to_socket_id(lcore_id);
+		if (socket_id < MAX_SOCKETS) {
+			sockets[socket_id] = 1;
+			cores[socket_id] = lcore_id;
+		}
+		stats_update_cache_mask(lcore_id, mask);
+		plog_info("Setting core %d to cache mask %x\n", lcore_id, mask);
+		lcore_cfg[lcore_id].cache_set = 0;
+	}
+	for (uint32_t s = 0; s < MAX_SOCKETS; s++) {
+		if (sockets[s])
+			cat_reset_cache(cores[s]);
+	}
+	stats_lcore_assoc_rmid();
 }

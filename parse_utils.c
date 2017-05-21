@@ -31,6 +31,8 @@
 
 #include <ctype.h>
 #include <stdio.h>
+#include <float.h>
+#include <math.h>
 #include <unistd.h>
 #include <errno.h>
 #include <stdarg.h>
@@ -39,6 +41,7 @@
 #include <rte_string_fns.h>
 
 #include "quit.h"
+#include "cfgfile.h"
 #include "ip6_addr.h"
 #include "parse_utils.h"
 #include "prox_globals.h"
@@ -141,8 +144,8 @@ static int parse_single_var(char *val, size_t len, const char *name)
 /* Replace $... and each occurrence of ${...} with variable values */
 int parse_vars(char *val, size_t len, const char *name)
 {
-	static char result[2048];
-	static char cur_var[2048];
+	static char result[MAX_CFG_STRING_LEN];
+	static char cur_var[MAX_CFG_STRING_LEN];
 	char parsed[2048];
 	size_t name_len = strlen(name);
 	enum parse_vars_state {NO_VAR, WHOLE_VAR, INLINE_VAR} state = NO_VAR;
@@ -627,7 +630,7 @@ static int parse_core(int *socket, int *core, int *ht, const char* str)
 {
 	*socket = -1;
 	*core = -1;
-	*ht -1;
+	*ht = -1;
 
 	char* end;
 
@@ -1001,6 +1004,41 @@ int parse_int(uint32_t* val, const char *str2)
 	}
 	if (tmp < 0) {
 		set_errf("Integer is negative");
+		return -2;
+	}
+	*val = tmp;
+
+	return 0;
+}
+
+int parse_float(float* val, const char *str2)
+{
+	char str[MAX_STR_LEN_PROC];
+
+	if (parse_vars(str, sizeof(str), str2))
+		return -1;
+
+	float tmp = strtof(str, 0);
+	if ((tmp >= HUGE_VALF) || (tmp <= -HUGE_VALF)) {
+		set_errf("Unable to parse float\n");
+		return -1;
+	}
+	*val = tmp;
+
+	return 0;
+}
+
+int parse_u64(uint64_t* val, const char *str2)
+{
+	char str[MAX_STR_LEN_PROC];
+
+	if (parse_vars(str, sizeof(str), str2))
+		return -1;
+
+	errno = 0;
+	uint64_t tmp = strtoul(str, NULL, 0);
+	if (errno != 0) {
+		set_errf("Invalid u64 '%s' (%s)", str, strerror(errno));
 		return -2;
 	}
 	*val = tmp;

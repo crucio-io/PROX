@@ -63,7 +63,7 @@ static uint16_t buffer_packets(struct task_dump *task, struct rte_mbuf **mbufs, 
 	return j;
 }
 
-static void handle_dump_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static int handle_dump_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	struct task_dump *task = (struct task_dump *)tbase;
 	const uint16_t ofs = buffer_packets(task, mbufs, n_pkts);
@@ -71,6 +71,7 @@ static void handle_dump_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, u
 	for (uint16_t j = ofs; j < n_pkts; ++j)
 		rte_pktmbuf_free(mbufs[j]);
 	TASK_STATS_ADD_DROP_DISCARD(&tbase->aux->stats, n_pkts - ofs);
+	return n_pkts;
 }
 
 static void init_task_dump(struct task_base *tbase, __attribute__((unused)) struct task_args *targ)

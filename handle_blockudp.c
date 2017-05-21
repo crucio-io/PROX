@@ -42,7 +42,7 @@ struct task_blockudp {
 	struct task_base    base;
 };
 
-static void handle_blockudp_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static int handle_blockudp_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	struct task_blockudp *task = (struct task_blockudp *)tbase;
 	uint8_t out[MAX_PKT_BURST];
@@ -54,7 +54,7 @@ static void handle_blockudp_bulk(struct task_base *tbase, struct rte_mbuf **mbuf
 		out[j] = peth->ether_type == ETYPE_IPv4 && pip->next_proto_id == 0x11 ? OUT_DISCARD : 0;
 	}
 
-	task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
+	return task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
 }
 
 static void init_task_blockudp(__attribute__((unused)) struct task_base *tbase,

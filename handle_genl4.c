@@ -156,7 +156,7 @@ static const struct bundle_cfg *server_accept(struct task_gen_server *task, stru
 		return task->listen_entries[ret];
 }
 
-static void handle_gen_bulk_client(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static int handle_gen_bulk_client(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	struct task_gen_client *task = (struct task_gen_client *)tbase;
 	uint8_t out[MAX_PKT_BURST] = {0};
@@ -207,7 +207,7 @@ static void handle_gen_bulk_client(struct task_base *tbase, struct rte_mbuf **mb
 	/* If there is at least one callback to handle, handle at most MAX_PKT_BURST */
 	if (heap_top_is_lower(task->heap, rte_rdtsc())) {
 		if (0 != refill_mbufs(&task->n_new_mbufs, task->mempool, task->new_mbufs))
-			return ;
+			return 0;
 
 		uint16_t n_called_back = 0;
 		while (heap_top_is_lower(task->heap, rte_rdtsc()) && n_called_back < MAX_PKT_BURST) {
@@ -240,10 +240,10 @@ static void handle_gen_bulk_client(struct task_base *tbase, struct rte_mbuf **mb
 		n_new = task->new_conn_tokens;
 	task->new_conn_tokens -= n_new;
 	if (n_new == 0)
-		return ;
+		return 0;
 
 	if (0 != refill_mbufs(&task->n_new_mbufs, task->mempool, task->new_mbufs))
-		return;
+		return 0;
 
 	for (uint32_t i = 0; i < n_new; ++i) {
 		struct bundle_ctx *bundle_ctx = bundle_ctx_pool_get_w_cfg(&task->bundle_ctx_pool);
@@ -291,8 +291,9 @@ static void handle_gen_bulk_client(struct task_base *tbase, struct rte_mbuf **mb
 		out[i] = ret == 0? 0: OUT_HANDLED;
 	}
 
-	task->base.tx_pkt(&task->base, task->new_mbufs, n_new, out);
+	int ret2 = task->base.tx_pkt(&task->base, task->new_mbufs, n_new, out);
 	task->n_new_mbufs -= n_new;
+	return ret2;
 }
 
 static int handle_gen_queued(struct task_gen_server *task)
@@ -479,11 +480,11 @@ static int handle_gen_scheduled(struct task_gen_server *task)
 	return 0;
 }
 
-static void handle_gen_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static int handle_gen_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	struct task_gen_server *task = (struct task_gen_server *)tbase;
 	struct bundle_ctx *conn;
-	int ret;
+	int ret, ret2 = 0;
 
 	token_time_update(&task->token_time, rte_rdtsc());
 
@@ -492,7 +493,7 @@ static void handle_gen_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, ui
 		for (uint16_t j = 0; j < n_pkts - ret; ++j)
 			out[j] = OUT_DISCARD;
 
-		task->base.tx_pkt(&task->base, mbufs + ret, n_pkts - ret, out);
+		ret2 = task->base.tx_pkt(&task->base, mbufs + ret, n_pkts - ret, out);
 	}
 	if (task->handle_state == HANDLE_QUEUED) {
 		if (handle_gen_queued(task) == 0) {
@@ -506,6 +507,7 @@ static void handle_gen_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, ui
 				task->handle_state = HANDLE_QUEUED;
 		}
 	}
+	return ret2;
 }
 
 static int lua_to_host_set(struct lua_State *L, enum lua_place from, const char *name, struct host_set *h)

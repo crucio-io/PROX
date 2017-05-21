@@ -60,6 +60,7 @@
 #include "thread_nop.h"
 #include "thread_generic.h"
 #include "thread_pipeline.h"
+#include "cqm.h"
 
 #if RTE_VERSION < RTE_VERSION_NUM(1,8,0,0)
 #define RTE_CACHE_LINE_SIZE CACHE_LINE_SIZE
@@ -157,7 +158,7 @@ static void plog_all_rings(void)
 	}
 }
 
-static int chain_flag_state(struct task_args *targ, uint32_t flag, int is_set)
+static int chain_flag_state(struct task_args *targ, uint64_t flag, int is_set)
 {
 	if (task_init_flag_set(targ->task_init, flag) == is_set)
 		return 1;
@@ -548,7 +549,7 @@ static void setup_mempools_unique_per_socket(void)
 				PROX_PANIC(mbuf_size[socket] != targ->mbuf_size,
 					   "all mbuf_size must have the same size if using a unique mempool per socket\n");
 			}
-			if ((!targ->mbuf_size_set_explicitely) && (strcmp(port_cfg->driver_name, "rte_vmxnet3_pmd") == 0)) {
+			if ((!targ->mbuf_size_set_explicitely) && (strcmp(port_cfg->short_name, "vmxnet3") == 0)) {
 				if (mbuf_size[socket] < MBUF_SIZE + RTE_PKTMBUF_HEADROOM)
 					mbuf_size[socket] = MBUF_SIZE + RTE_PKTMBUF_HEADROOM;
 			}
@@ -614,7 +615,7 @@ static void setup_mempool_for_rx_task(struct lcore_cfg *lconf, struct task_args 
 		/* mbuf_size not set through config file but set through mode */
 		targ->mbuf_size = targ->task_init->mbuf_size;
 	}
-	else if (strcmp(port_cfg->driver_name, "rte_vmxnet3_pmd") == 0) {
+	else if (strcmp(port_cfg->short_name, "vmxnet3") == 0) {
 		if (targ->mbuf_size < MBUF_SIZE + RTE_PKTMBUF_HEADROOM)
 			targ->mbuf_size = MBUF_SIZE + RTE_PKTMBUF_HEADROOM;
 	}
@@ -759,7 +760,6 @@ static void init_port_activate(void)
 	uint8_t port_id = 0;
 
 	while (core_targ_next_early(&lconf, &targ, 0) == 0) {
-		printf("%p %p\n", lconf, targ);
 		for (int i = 0; i < targ->nb_rxports; i++) {
 			port_id = targ->rx_port_queue[i].port;
 			prox_port_cfg[port_id].active = 1;
@@ -874,6 +874,7 @@ int main(int argc, char **argv)
 	plog_init(prox_cfg.log_name, prox_cfg.log_name_pid);
 	plog_info("=== " PROGRAM_NAME " " VERSION_STR " ===\n");
 	plog_info("\tUsing DPDK %s\n", rte_version() + sizeof(RTE_VER_PREFIX));
+	read_rdt_info();
 
 	if (prox_cfg.flags & DSF_DAEMON) {
 		signal(SIGUSR1, siguser_handler);

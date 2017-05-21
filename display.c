@@ -743,11 +743,12 @@ static void display_stats_general_per_sec(void)
 	uint64_t nics_rx_pps = val_to_rate(gsl->nics_rx_packets - gsp->nics_rx_packets, gsl->tsc - gsp->tsc);
 	uint64_t nics_tx_pps = val_to_rate(gsl->nics_tx_packets - gsp->nics_tx_packets, gsl->tsc - gsp->tsc);
 	uint64_t nics_ierrors = val_to_rate(gsl->nics_ierrors - gsp->nics_ierrors, gsl->tsc - gsp->tsc);
+	uint64_t nics_imissed = val_to_rate(gsl->nics_imissed - gsp->nics_imissed, gsl->tsc - gsp->tsc);
 
 	/* NIC: RX, TX, Diff */
 	pps_print(win_general, 1, 12, nics_rx_pps, 1);
 	pps_print(win_general, 1, 25, nics_tx_pps, 1);
-	pps_print(win_general, 1, 40, nics_ierrors, 1);
+	pps_print(win_general, 1, 40, nics_ierrors + nics_imissed, 1);
 
 	wbkgdset(win_general, COLOR_PAIR(CYAN_ON_NOTHING));
 	wattron(win_general, A_BOLD);
@@ -763,17 +764,18 @@ static void display_stats_general_per_sec(void)
 		uint64_t nics_rx_pps = val_to_rate(gsl->nics_rx_packets - gsb->nics_rx_packets, gsl->tsc - gsb->tsc);
 		uint64_t nics_tx_pps = val_to_rate(gsl->nics_tx_packets - gsb->nics_tx_packets, gsl->tsc - gsb->tsc);
 		uint64_t nics_ierrors = val_to_rate(gsl->nics_ierrors - gsb->nics_ierrors, gsl->tsc - gsb->tsc);
+		uint64_t nics_imissed = val_to_rate(gsl->nics_imissed - gsb->nics_imissed, gsl->tsc - gsb->tsc);
 
 		pps_print(win_general, 0, 64, rx_pps, 0);
 		pps_print(win_general, 0, 77, tx_pps, 0);
 
 		pps_print(win_general, 1, 64, nics_rx_pps, 0);
 		pps_print(win_general, 1, 77, nics_tx_pps, 0);
-		pps_print(win_general, 1, 91, nics_ierrors, 0);
+		pps_print(win_general, 1, 91, nics_ierrors + nics_imissed, 0);
 
 		wbkgdset(win_general, COLOR_PAIR(CYAN_ON_NOTHING));
 		wattron(win_general, A_BOLD);
-		uint64_t nics_in = gsl->host_rx_packets - gsb->host_rx_packets + gsl->nics_ierrors - gsb->nics_ierrors;
+		uint64_t nics_in = gsl->host_rx_packets - gsb->host_rx_packets + gsl->nics_ierrors - gsb->nics_ierrors + gsl->nics_imissed - gsb->nics_imissed;
 		uint64_t nics_out = gsl->host_tx_packets - gsb->host_tx_packets;
 		mvwaddstrf(win_general, 1, 103, "%6.2f", nics_out > nics_in?
 			   100 : nics_out * 100.0 / nics_in);
@@ -806,7 +808,7 @@ static void display_stats_general_total(void)
 
 	mvwaddstrf(win_general, 1, 13, "%16lu", gsl->nics_rx_packets);
 	mvwaddstrf(win_general, 1, 35, "%16lu", gsl->nics_tx_packets);
-	mvwaddstrf(win_general, 1, 60, "%16lu", gsl->nics_ierrors);
+	mvwaddstrf(win_general, 1, 60, "%16lu", gsl->nics_ierrors + gsl->nics_imissed);
 	if (gsl->nics_rx_packets == 0)
 		percent = 1000000;
 	else

@@ -46,6 +46,7 @@
 #include "stats.h"
 #include "stats_cons.h"
 #include "stats_cons_log.h"
+#include "stats_cons_cli.h"
 
 #include "input.h"
 #include "input_curses.h"
@@ -190,7 +191,7 @@ void __attribute__((noreturn)) run(uint32_t flags)
 		stats_cons_add(&display);
 		break;
 	case PROX_UI_CLI:
-		/* Not implemented */
+		stats_cons_add(stats_cons_cli_get());
 		break;
 	case PROX_UI_NONE:
 	default:

@@ -50,7 +50,7 @@
 #define TASK_FP_HANDLE_ARP             0x0040
 #define TASK_TX_CRC                    0x0080
 
-// flag_features 32 bits
+// flag_features 64 bits
 #define TASK_FEATURE_ROUTING           0x0001
 #define TASK_FEATURE_CLASSIFY          0x0002
 #define TASK_FEATURE_MULTI_RX                  0x0004
@@ -66,6 +66,7 @@
 #define TASK_FEATURE_LUT_QINQ_RSS              0x2000
 #define TASK_FEATURE_LUT_QINQ_HASH             0x4000
 #define TASK_FEATURE_RX_ALL                    0x8000
+#define TASK_FEATURE_SENDING_ARP_REPLIES       0x10000
 
 #define FLAG_TX_FLUSH                  0x01
 #define FLAG_NEVER_FLUSH               0x02
@@ -135,9 +136,9 @@ struct tx_params_sw {
 } __attribute__((packed));
 
 struct tx_params_hw_sw {	/* Only one port supported in this mode */
-	struct port_queue tx_port_queue;
 	uint16_t         nb_txrings;
 	struct rte_ring **tx_rings;
+	struct port_queue tx_port_queue;
 } __attribute__((packed));
 
 struct task_rt_dump {
@@ -178,8 +179,8 @@ struct task_base_aux {
 
 	uint32_t rx_bucket[MAX_RING_BURST + 1];
 	uint32_t tx_bucket[MAX_RING_BURST + 1];
-	void (*tx_pkt_orig)(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, uint8_t *out);
-	void (*tx_pkt_hw)(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, uint8_t *out);
+	int (*tx_pkt_orig)(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, uint8_t *out);
+	int (*tx_pkt_hw)(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, uint8_t *out);
 	uint16_t (*tx_pkt_try)(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts);
 	void (*stop)(struct task_base *tbase);
 	void (*start)(struct task_base *tbase);
@@ -191,8 +192,8 @@ struct task_base_aux {
    no debugging is needed, it has been optimized to fit
    into a single cache line to minimize cache pollution */
 struct task_base {
-	void (*handle_bulk)(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts);
-	void (*tx_pkt)(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, uint8_t *out);
+	int (*handle_bulk)(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts);
+	int (*tx_pkt)(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, uint8_t *out);
 	uint16_t (*rx_pkt)(struct task_base *tbase, struct rte_mbuf ***mbufs);
 
 	struct task_base_aux* aux;

@@ -41,6 +41,7 @@ struct global_stats_sample {
 	uint64_t nics_rx_packets;
 	uint64_t nics_tx_packets;
 	uint64_t nics_ierrors;
+	uint64_t nics_imissed;
 };
 
 void stats_global_reset(void);

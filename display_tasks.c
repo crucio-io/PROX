@@ -66,6 +66,10 @@ static struct display_column *tx_fail_col;
 static struct display_column *discard_col;
 static struct display_column *handled_col;
 static struct display_column *occup_col;
+static struct display_column *mask_col;
+static struct display_column *class_col;
+static struct display_column *mbm_tot_col;
+static struct display_column *mbm_loc_col;
 static struct display_column *frac_col;
 
 static void stats_display_core_task_entry(struct lcore_cfg *lconf, struct task_args *targ, unsigned row)
@@ -137,6 +141,13 @@ static void display_tasks_draw_frame(struct screen_state *state)
 			ghz_col = display_table_add_col(other);
 			display_column_init(ghz_col, "Clk (GHz)", 9);
 		}
+		if (stats_mbm_enabled()) {
+			struct display_table *other = display_page_add_table(&display_page_tasks);
+			mbm_tot_col = display_table_add_col(other);
+			display_column_init(mbm_tot_col, "Tot Bdw(M)", 10);
+			mbm_loc_col = display_table_add_col(other);
+			display_column_init(mbm_loc_col, "Loc Bdw(M)", 10);
+		}
 	} else {
 		display_table_init(stats, "Total Statistics");
 
@@ -155,7 +166,7 @@ static void display_tasks_draw_frame(struct screen_state *state)
 		handled_col = display_table_add_col(stats);
 		display_column_init(handled_col, "Handled (K)", 14);
 
-		if (stats_cqm_enabled()) {
+		if (stats_cmt_enabled()) {
 			struct display_table *other = display_page_add_table(&display_page_tasks);
 
 			display_table_init(other, "Cache QoS Monitoring");
@@ -165,6 +176,13 @@ static void display_tasks_draw_frame(struct screen_state *state)
 
 			frac_col = display_table_add_col(other);
 			display_column_init(frac_col, "Fraction", 9);
+		}
+		if (stats_cat_enabled()) {
+			struct display_table *other = display_page_add_table(&display_page_tasks);
+			mask_col = display_table_add_col(other);
+			display_column_init(mask_col, "Cache mask", 10);
+			class_col = display_table_add_col(other);
+			display_column_init(class_col, "Class", 5);
 		}
 	}
 	display_page_draw_frame(&display_page_tasks, n_tasks_tot);
@@ -257,6 +275,20 @@ static void display_core_task_stats_per_sec(const struct task_stats_disp *t, str
 		display_column_print(cpp_col, row, "%lu", cpp);
 		display_column_print(ghz_col, row, "%lu.%03lu", mhz/1000, mhz%1000);
 	}
+	if (stats_mbm_enabled()) {
+		struct lcore_stats *c = stats_get_lcore_stats(t->lcore_stat_id);
+		uint8_t lcore_stat_id = t->lcore_stat_id;
+		struct lcore_stats_sample *clast = stats_get_lcore_stats_sample(lcore_stat_id, 1);
+		struct lcore_stats_sample *cprev = stats_get_lcore_stats_sample(lcore_stat_id, 0);
+		if ((clast->mbm_tot_bytes - cprev->mbm_tot_bytes) >> 20)
+			display_column_print(mbm_tot_col, row, "%lu", (clast->mbm_tot_bytes - cprev->mbm_tot_bytes) >> 20);
+		else
+			display_column_print(mbm_tot_col, row, "0.%03lu", (clast->mbm_tot_bytes - cprev->mbm_tot_bytes) >> 10);
+		if( (clast->mbm_loc_bytes - cprev->mbm_loc_bytes) >> 20)
+			display_column_print(mbm_loc_col, row, "%lu", (clast->mbm_loc_bytes - cprev->mbm_loc_bytes) >> 20);
+		else
+			display_column_print(mbm_loc_col, row, "0.%03lu", (clast->mbm_loc_bytes - cprev->mbm_loc_bytes) >> 10);
+	}
 }
 
 static void display_core_task_stats_tot(const struct task_stats_disp *t, struct screen_state *state, int row)
@@ -269,11 +301,15 @@ static void display_core_task_stats_tot(const struct task_stats_disp *t, struct 
 	display_column_print(discard_col, row, "%lu", ts->tot_drop_discard);
 	display_column_print(handled_col, row, "%lu", ts->tot_drop_handled);
 
-	if (stats_cqm_enabled()) {
+	if (stats_cmt_enabled()) {
 		struct lcore_stats *c = stats_get_lcore_stats(t->lcore_stat_id);
-
-		display_column_print(occup_col, row, "%lu", c->cqm_bytes >> 10);
-		display_column_print(frac_col, row, "%3lu.%02lu", c->cqm_fraction/100, c->cqm_fraction%100);
+		display_column_print(occup_col, row, "%lu", c->cmt_bytes >> 10);
+		display_column_print(frac_col, row, "%3lu.%02lu", c->cmt_fraction/100, c->cmt_fraction%100);
+	}
+	if (stats_cat_enabled()) {
+		struct lcore_stats *c = stats_get_lcore_stats(t->lcore_stat_id);
+		display_column_print(mask_col, row, "%x", c->cat_mask);
+		display_column_print(class_col, row, "%x", c->class);
 	}
 }
 

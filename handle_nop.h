@@ -39,10 +39,10 @@ struct task_nop {
 	struct task_base base;
 };
 
-static inline void handle_nop_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static inline int handle_nop_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	struct task_nop *task = (struct task_nop *)tbase;
-	task->base.tx_pkt(&task->base, mbufs, n_pkts, NULL);
+	return task->base.tx_pkt(&task->base, mbufs, n_pkts, NULL);
 }
 
 #endif /* _HANDLE_NOP_H_ */

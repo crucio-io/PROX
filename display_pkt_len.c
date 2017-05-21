@@ -49,7 +49,8 @@ const char *titles[] = {
 	"128-255B (#)",
 	"256-511B (#)",
 	"512-1023B (#)",
-	"1024B+ (#)",
+	"1024-1522B (#)",
+	"1523B+ (#)",
 };
 
 static int port_disp[PROX_MAX_PORTS];
@@ -120,7 +121,7 @@ static void display_pkt_len_draw_stats(struct screen_state *state)
 			}
 		} else {
 			for (int j = 0; j < PKT_SIZE_COUNT; ++j) {
-				display_column_print(stats_col[j], i, "%13lu", last->tx_pkt_size[i]);
+				display_column_print(stats_col[j], i, "%13lu", last->tx_pkt_size[j]);
 			}
 		}
 	}

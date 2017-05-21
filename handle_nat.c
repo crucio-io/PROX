@@ -56,6 +56,7 @@ struct task_nat {
 	struct rte_hash  *hash;
 	uint32_t         *entries;
 	int              use_src;
+	int              offload_crc;
 };
 
 struct pkt_eth_ipv4 {
@@ -85,11 +86,11 @@ static int handle_nat(struct task_nat *task, struct rte_mbuf *mbuf)
 		return OUT_DISCARD;
 
         *ip_addr = task->entries[ret];
-	prox_ip_udp_cksum(mbuf, &pkt->ipv4_hdr, sizeof(struct ether_hdr), sizeof(struct ipv4_hdr));
+	prox_ip_udp_cksum(mbuf, &pkt->ipv4_hdr, sizeof(struct ether_hdr), sizeof(struct ipv4_hdr), task->offload_crc);
 	return 0;
 }
 
-static void handle_nat_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static int handle_nat_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
         struct task_nat *task = (struct task_nat *)tbase;
         uint8_t out[MAX_PKT_BURST];
@@ -108,7 +109,7 @@ static void handle_nat_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, ui
                 out[j] = handle_nat(task, mbufs[j]);
         }
 #endif
-        task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
+        return task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
 }
 
 static int lua_to_hash_nat(struct lua_State *L, enum lua_place from, const char *name,
@@ -183,6 +184,11 @@ static void init_task_nat(struct task_base *tbase, struct task_args *targ)
 	PROX_PANIC(!strcmp(targ->nat_table, ""), "No nat table specified\n");
 	ret = lua_to_hash_nat(prox_lua(), GLOBAL, targ->nat_table, socket_id, &task->hash, &task->entries);
 	PROX_PANIC(ret != 0, "Failed to load NAT table from lua:\n%s\n", get_lua_to_errors());
+	struct prox_port_cfg *port = find_reachable_port(targ);
+	if (port) {
+		task->offload_crc = port->capabilities.tx_offload_cksum;
+	}
+
 }
 
 /* Basic static nat. */

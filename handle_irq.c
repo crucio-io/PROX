@@ -39,7 +39,7 @@
 #include "unistd.h"
 #include "input.h"
 
-#define MAX_INDEX	65535
+#define MAX_INDEX	65535 * 16
 
 struct irq_info {
 	uint64_t tsc;
@@ -62,12 +62,12 @@ struct task_irq {
 	struct irq_bucket buffer[2];
 };
 
-#define MAX_PACKETS	128
+#define MAX_INTERRUPT_LENGTH	500000	/* Maximum length of an interrupt is (1 / MAX_INTERRUPT_LENGTH) seconds */
 
 /*
  *	This module is not handling any packets.
  *	It loops on rdtsc() and checks whether it has been interrupted
- *		 for more than ~ (MAX_PACKETS * 67 nsec).
+ *		 for more than (1 / MAX_INTERRUPT_LENGTH) sec.
  *	This is a debugging only task, useful to check if the system h
  *		as been properly configured.
 */
@@ -117,6 +117,7 @@ static void irq_stop(struct task_base *tbase)
 	int bucket_id;
 
 	plog_info("Stopping core %u\n", lcore_id);
+	plog_info("Core ID; Interrupt (nanosec); Time (msec)\n");
 	for (int j = 0; j < 2; j++) {
 		// Start dumping the oldest bucket first
 		if (task->buffer[0].info[0].tsc < task->buffer[1].info[0].tsc)
@@ -126,12 +127,9 @@ static void irq_stop(struct task_base *tbase)
 		struct irq_bucket *bucket = &task->buffer[bucket_id];
 		for (i=0; i< bucket->index;i++) {
 			if (bucket->info[i].lat != 0) {
-				plog_info("[%d]; Interrupt %d: %ld cycles (%ld micro-sec) at %ld cycles (%ld msec)\n",
+				plog_info("%d; %ld; %ld\n",
 					  lcore_id,
-					  i,
-					  bucket->info[i].lat,
-					  bucket->info[i].lat * 1000000 / rte_get_tsc_hz(),
-					  bucket->info[i].tsc - task->start_tsc,
+					  bucket->info[i].lat * 1000000000 / rte_get_tsc_hz(),
 					  (bucket->info[i].tsc - task->start_tsc) * 1000 / rte_get_tsc_hz());
 			}
 		}
@@ -139,7 +137,7 @@ static void irq_stop(struct task_base *tbase)
 	plog_info("Core %u stopped\n", lcore_id);
 }
 
-static inline void handle_irq_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static inline int handle_irq_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	struct task_irq *task = (struct task_irq *)tbase;
 	uint64_t tsc1;
@@ -155,14 +153,15 @@ static inline void handle_irq_bulk(struct task_base *tbase, struct rte_mbuf **mb
 		bucket->info[bucket->index++].lat = tsc1 - task->tsc;
 	}
 	task->tsc = tsc1;
+	return 0;
 }
 
 static void init_task_irq(struct task_base *tbase,
 			  __attribute__((unused)) struct task_args *targ)
 {
 	struct task_irq *task = (struct task_irq *)tbase;
-	// max_irq expressed in 64 bytes packets
-	task->max_irq = ((MAX_PACKETS * rte_get_tsc_hz()) / 14880961);
+	// max_irq expressed in cycles
+	task->max_irq = rte_get_tsc_hz() / MAX_INTERRUPT_LENGTH;
 	task->start_tsc = rte_rdtsc();
 	task->lcore_id = targ->lconf->id;
 	plog_info("\tusing irq mode with max irq set to %ld cycles\n", task->max_irq);

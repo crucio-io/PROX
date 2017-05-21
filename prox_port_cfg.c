@@ -176,9 +176,9 @@ void init_rte_dev(int use_dummy_devices)
 			 "%04x:%02x:%02x.%1x", dev_info.pci_dev->addr.domain, dev_info.pci_dev->addr.bus, dev_info.pci_dev->addr.devid, dev_info.pci_dev->addr.function);
 		strncpy(port_cfg->driver_name, dev_info.driver_name, sizeof(port_cfg->driver_name));
 
-		strncpy(port_cfg->short_name, prox_port_cfg[port_id].driver_name, sizeof(port_cfg->type));
-
 		if (strncmp(port_cfg->driver_name, "rte_", 4) == 0) {
+			strncpy(port_cfg->short_name, prox_port_cfg[port_id].driver_name + 4, sizeof(port_cfg->short_name));
+		} else if (strncmp(port_cfg->driver_name, "net_", 4) == 0) {
 			strncpy(port_cfg->short_name, prox_port_cfg[port_id].driver_name + 4, sizeof(port_cfg->short_name));
 		} else {
 			strncpy(port_cfg->short_name, prox_port_cfg[port_id].driver_name, sizeof(port_cfg->short_name));
@@ -204,7 +204,10 @@ void init_rte_dev(int use_dummy_devices)
 		}
 
 		if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_IPV4_CKSUM) {
-			port_cfg->capabilities.tx_offload_ipv4_cksum = 1;
+			port_cfg->capabilities.tx_offload_cksum |= IPV4_CKSUM;
+		}
+		if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_UDP_CKSUM) {
+			port_cfg->capabilities.tx_offload_cksum |= UDP_CKSUM;
 		}
 	}
 }
@@ -261,7 +264,7 @@ static void init_port(struct prox_port_cfg *port_cfg)
 		plog_info("\t\tPort %u had no RX queues, setting to 1\n", port_id);
 		port_cfg->n_rxq = 1;
 		uint32_t mbuf_size = MBUF_SIZE;
-		if (strcmp(port_cfg->driver_name, "rte_vmxnet3_pmd") == 0) {
+		if (strcmp(port_cfg->short_name, "vmxnet3") == 0) {
 			mbuf_size = MBUF_SIZE + RTE_PKTMBUF_HEADROOM;
 		}
 		plog_info("\t\tAllocating dummy memory pool on socket %u with %u elements of size %u\n",
@@ -277,7 +280,7 @@ static void init_port(struct prox_port_cfg *port_cfg)
 		dummy_pool_name[0]++;
 	} else {
 		// Most pmd do not support setting mtu yet...
-		if (!strcmp(port_cfg->driver_name, "rte_ixgbe_pmd")) {
+		if (!strcmp(port_cfg->short_name, "ixgbe")) {
 			plog_info("\t\tSetting MTU size to %u for port %u ...\n", port_cfg->mtu, port_id);
 			ret = rte_eth_dev_set_mtu(port_id, port_cfg->mtu);
 			PROX_PANIC(ret < 0, "\n\t\t\trte_eth_dev_set_mtu() failed on port %u: error %d\n", port_id, ret);
@@ -308,14 +311,14 @@ static void init_port(struct prox_port_cfg *port_cfg)
 	PROX_PANIC(port_cfg->n_rxq > port_cfg->max_rxq, "\t\t\tToo many RX queues (configuring %u, max is %u)\n", port_cfg->n_rxq, port_cfg->max_rxq);
 	PROX_PANIC(port_cfg->n_txq > port_cfg->max_txq, "\t\t\tToo many TX queues (configuring %u, max is %u)\n", port_cfg->n_txq, port_cfg->max_txq);
 
-	if (!strcmp(port_cfg->driver_name, "rte_ixgbevf_pmd") ||
-	    !strcmp(port_cfg->driver_name, "rte_virtio_pmd") ||
+	if (!strcmp(port_cfg->short_name, "ixgbe_vf") ||
+	    !strcmp(port_cfg->short_name, "virtio") ||
 #if RTE_VERSION < RTE_VERSION_NUM(1,8,0,0)
-	    !strcmp(port_cfg->driver_name, "rte_i40e_pmd") ||
+	    !strcmp(port_cfg->short_name, "i40e") ||
 #endif
-	    !strcmp(port_cfg->driver_name, "rte_i40evf_pmd") ||
+	    !strcmp(port_cfg->short_name, "i40e_vf") ||
 	    !strcmp(port_cfg->driver_name, "") || /* NULL device */
-	    !strcmp(port_cfg->driver_name, "rte_vmxnet3_pmd")) {
+	    !strcmp(port_cfg->short_name, "vmxnet3")) {
 		port_cfg->port_conf.intr_conf.lsc = 0;
 		plog_info("\t\tDisabling link state interrupt for vmxnet3/VF/virtio (unsupported)\n");
 	}
@@ -324,7 +327,7 @@ static void init_port(struct prox_port_cfg *port_cfg)
 		port_cfg->port_conf.intr_conf.lsc = port_cfg->lsc_val;
 		plog_info("\t\tOverriding link state interrupt configuration to '%s'\n", port_cfg->lsc_val? "enabled" : "disabled");
 	}
-	if (!strcmp(port_cfg->driver_name, "rte_vmxnet3_pmd")) {
+	if (!strcmp(port_cfg->short_name, "vmxnet3")) {
 		if (port_cfg->n_txq < 512) {
 			// Vmxnet3 driver requires minimum 512 tx descriptors
 			plog_info("\t\tNumber of TX descriptors is set to 512 (minimum required for vmxnet3\n");
@@ -355,12 +358,12 @@ static void init_port(struct prox_port_cfg *port_cfg)
 
 		PROX_PANIC(ret < 0, "\t\t\trte_eth_rx_queue_setup() failed on port %u: error %s (%d)\n", port_id, strerror(-ret), ret);
 	}
-	if (!strcmp(port_cfg->driver_name, "rte_virtio_pmd")) {
+	if (!strcmp(port_cfg->short_name, "virtio")) {
 		port_cfg->tx_conf.txq_flags = ETH_TXQ_FLAGS_NOOFFLOADS;
 		plog_info("\t\tDisabling TX offloads (virtio does not support TX offloads)\n");
 	}
 
-	if (!strcmp(port_cfg->driver_name, "rte_vmxnet3_pmd")) {
+	if (!strcmp(port_cfg->short_name, "vmxnet3")) {
 		port_cfg->tx_conf.txq_flags |= ETH_TXQ_FLAGS_NOOFFLOADS | ETH_TXQ_FLAGS_NOMULTSEGS;
 		plog_info("\t\tDisabling TX offloads and multsegs on port %d as vmxnet3 does not support them\n", port_id);
 	}
@@ -405,9 +408,10 @@ static void init_port(struct prox_port_cfg *port_cfg)
 		plog_info("\t\tport %u in promiscuous mode\n", port_id);
 	}
 
-	if (strcmp(port_cfg->driver_name, "rte_ixgbevf_pmd") &&
-	    strcmp(port_cfg->driver_name, "rte_i40e_pmd") &&
-	    strcmp(port_cfg->driver_name, "rte_vmxnet3_pmd")) {
+	if (strcmp(port_cfg->short_name, "ixgbe_vf") &&
+	    strcmp(port_cfg->short_name, "i40e") &&
+	    strcmp(port_cfg->short_name, "i40e_vf") &&
+	    strcmp(port_cfg->short_name, "vmxnet3")) {
 		for (uint8_t i = 0; i < 16; ++i) {
 			ret = rte_eth_dev_set_rx_queue_stats_mapping(port_id, i, i);
 			if (ret) {

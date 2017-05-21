@@ -105,7 +105,7 @@ static inline uint8_t handle_lb_5tuple(struct task_lb_5tuple *task, struct rte_m
 	}
 }
 
-static void handle_lb_5tuple_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static int handle_lb_5tuple_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	struct task_lb_5tuple *task = (struct task_lb_5tuple *)tbase;
 	uint8_t out[MAX_PKT_BURST];
@@ -127,7 +127,7 @@ static void handle_lb_5tuple_bulk(struct task_base *tbase, struct rte_mbuf **mbu
 	}
 #endif
 
-	task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
+	return task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
 }
 
 static void init_task_lb_5tuple(struct task_base *tbase, struct task_args *targ)

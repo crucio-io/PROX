@@ -58,13 +58,19 @@
 #include "prefetch.h"
 #include "token_time.h"
 #include "local_mbuf.h"
+#include "arp.h"
+#include "tx_pkt.h"
 
 struct pkt_template {
+	uint32_t ip_src;
 	uint16_t len;
 	uint16_t l2_len;
 	uint16_t l3_len;
 	uint8_t  buf[ETHER_MAX_LEN];
 };
+
+#define FLAG_DST_MAC_KNOWN	1
+#define FLAG_L3_GEN		2
 
 static void pkt_template_init_mbuf(struct pkt_template *pkt_template, struct rte_mbuf *mbuf, uint8_t *pkt)
 {
@@ -122,6 +128,10 @@ struct task_gen {
 	uint64_t accur[64];
 	uint64_t pkt_tsc_offset[64];
 	struct pkt_template *pkt_template_orig; /* packet templates (from inline or from pcap) */
+	uint32_t gw_ip;
+	struct ether_addr gw_mac;
+	uint8_t flags;
+	uint8_t cksum_offload;
 } __rte_cache_aligned;
 
 static inline uint8_t ipv4_get_hdr_len(struct ipv4_hdr *ip)
@@ -136,89 +146,57 @@ static inline uint8_t ipv4_get_hdr_len(struct ipv4_hdr *ip)
 	return (ip->version_ihl & 0xF) * 4;
 }
 
-static void parse_l2_l3_len(uint8_t *pkt, uint16_t *l2_len, uint16_t *l3_len)
+static void parse_l2_l3_len(uint8_t *pkt, uint16_t *l2_len, uint16_t *l3_len, uint16_t len)
 {
 	*l2_len = sizeof(struct ether_hdr);
 	*l3_len = 0;
 	struct vlan_hdr *vlan_hdr;
-	struct qinq_hdr *qinq_hdr;
 	struct ether_hdr *eth_hdr = (struct ether_hdr*)pkt;
 	struct ipv4_hdr *ip;
+	uint16_t ether_type = eth_hdr->ether_type;
 
-	switch (eth_hdr->ether_type) {
-	case ETYPE_IPv6:
-		// No L3 cksum offload, but TODO L4 offload
-		*l2_len = 0;
-		break;
+	// Unstack VLAN tags
+	while (((ether_type == ETYPE_8021ad) || (ether_type == ETYPE_VLAN)) && (*l2_len + sizeof(struct vlan_hdr) < len)) {
+		vlan_hdr = (struct vlan_hdr *)(pkt + *l2_len);
+		*l2_len +=4;
+		ether_type = vlan_hdr->eth_proto;
+	}
+
+	// No L3 cksum offload for IPv6, but TODO L4 offload
+	// ETYPE_EoGRE CRC not implemented yet
+
+	switch (ether_type) {
 	case ETYPE_MPLSU:
 	case ETYPE_MPLSM:
 		*l2_len +=4;
+		break;
 	case ETYPE_IPv4:
 		break;
 	case ETYPE_EoGRE:
-		*l2_len = 0;
-		// Not implemented yet
-		break;
-	case ETYPE_8021ad:
-	case ETYPE_VLAN:
-		// vlan_hdr is only VLAN header i.e. 4 bytes, starts after Ethernet header
-		// qinq_hdr is Ethernet jeader + qinq i.e. 22 bytes, starts at Ethernet header
-		vlan_hdr = (struct vlan_hdr *)(pkt + *l2_len);
-		qinq_hdr = (struct qinq_hdr *)pkt;
-		*l2_len +=4;
-		switch (qinq_hdr->cvlan.eth_proto) {
-		case ETYPE_IPv6:
-			*l2_len = 0;
-			break;
-		case ETYPE_VLAN:
-			*l2_len +=4;
-			if (qinq_hdr->ether_type == ETYPE_IPv4) {
-
-			} else if (qinq_hdr->ether_type == ETYPE_ARP) {
-				*l2_len = 0;
-			} else {
-				*l2_len = 0;
-			}
-			break;
-		case ETYPE_IPv4:
-			// Update *l3_len for IP CSUM offload in case IP header contains optional fields.
-			break;
-		case ETYPE_ARP:
-			*l2_len = 0;
-			break;
-		case ETYPE_MPLSU:
-		case ETYPE_MPLSM:
-			*l2_len +=4;
-			break;
-		default:
-			*l2_len = 0;
-			plog_warn("Unsupported packet type %x - CRC might be wrong\n", qinq_hdr->cvlan.eth_proto);
-			break;
-		}
-		break;
 	case ETYPE_ARP:
+	case ETYPE_IPv6:
 		*l2_len = 0;
 		break;
 	default:
 		*l2_len = 0;
-		plog_warn("Unsupported packet type %x - CRC might be wrong\n", eth_hdr->ether_type);
+		plog_warn("Unsupported packet type %x - CRC might be wrong\n", ether_type);
 		break;
 	}
 
-	if (l2_len) {
+	if (*l2_len) {
 		struct ipv4_hdr *ip = (struct ipv4_hdr *)(pkt + *l2_len);
 		*l3_len = ipv4_get_hdr_len(ip);
 	}
 }
 
-static void checksum_packet(uint8_t *hdr, struct rte_mbuf *mbuf, struct pkt_template *pkt_template)
+static void checksum_packet(uint8_t *hdr, struct rte_mbuf *mbuf, struct pkt_template *pkt_template, int cksum_offload)
 {
 	uint16_t l2_len = pkt_template->l2_len;
 	uint16_t l3_len = pkt_template->l3_len;
 
 	if (l2_len) {
 		struct ipv4_hdr *ip = (struct ipv4_hdr*)(hdr + l2_len);
-		prox_ip_udp_cksum(mbuf, ip, l2_len, l3_len);
+		prox_ip_udp_cksum(mbuf, ip, l2_len, l3_len, cksum_offload);
 	}
 }
 
@@ -256,7 +234,7 @@ static void task_gen_take_count(struct task_gen *task, uint32_t send_bulk)
 	}
 }
 
-static void handle_gen_pcap_bulk(struct task_base *tbase, struct rte_mbuf **mbuf, uint16_t n_pkts)
+static int handle_gen_pcap_bulk(struct task_base *tbase, struct rte_mbuf **mbuf, uint16_t n_pkts)
 {
 	struct task_gen_pcap *task = (struct task_gen_pcap *)tbase;
 	uint64_t now = rte_rdtsc();
@@ -265,7 +243,7 @@ static void handle_gen_pcap_bulk(struct task_base *tbase, struct rte_mbuf **mbuf
 
 	if (pkt_idx_tmp == task->n_pkts) {
 		PROX_ASSERT(task->loop);
-		return;
+		return 0;
 	}
 
 	for (uint16_t j = 0; j < 64; ++j) {
@@ -287,7 +265,7 @@ static void handle_gen_pcap_bulk(struct task_base *tbase, struct rte_mbuf **mbuf
 
 	struct rte_mbuf **new_pkts = local_mbuf_refill_and_take(&task->local_mbuf, send_bulk);
 	if (new_pkts == NULL)
-		return;
+		return 0;
 
 	for (uint16_t j = 0; j < send_bulk; ++j) {
 		struct rte_mbuf *next_pkt = new_pkts[j];
@@ -305,7 +283,7 @@ static void handle_gen_pcap_bulk(struct task_base *tbase, struct rte_mbuf **mbuf
 		}
 	}
 
-	task->base.tx_pkt(&task->base, new_pkts, send_bulk, NULL);
+	return task->base.tx_pkt(&task->base, new_pkts, send_bulk, NULL);
 }
 
 static uint64_t bytes_to_tsc(struct task_gen *task, uint32_t bytes)
@@ -350,9 +328,17 @@ static uint32_t task_gen_calc_send_bulk(const struct task_gen *task, uint32_t *t
 	uint32_t send_bulk = 0;
 	uint32_t pkt_idx_tmp = task->pkt_idx;
 	uint32_t would_send_bytes = 0;
+	uint32_t pkt_size;
 
 	for (uint16_t j = 0; j < max_bulk; ++j) {
-		uint32_t pkt_size = task->pkt_template[pkt_idx_tmp].len;
+		struct pkt_template *pktpl = &task->pkt_template[pkt_idx_tmp];
+		if (unlikely((task->flags & (FLAG_L3_GEN | FLAG_DST_MAC_KNOWN)) == FLAG_L3_GEN))  {
+			// Generator is supposed to get MAC address - MAC is still unknown for this template
+			// generate ARP Request to gateway instead of the intended packet
+			pkt_size = 60;
+		} else {
+			pkt_size = pktpl->len;
+		}
 		uint32_t pkt_len = pkt_len_to_wire_size(pkt_size);
 		if (pkt_len + would_send_bytes > task->token_time.bytes_now)
 			break;
@@ -447,7 +433,7 @@ static void task_gen_checksum_packets(struct task_gen *task, uint8_t **pkt_hdr, 
 	for (uint16_t i = 0; i < count; ++i) {
 		struct pkt_template *pkt_template = &task->pkt_template[pkt_idx];
 
-		checksum_packet(pkt_hdr[i], mbufs[i], pkt_template);
+		checksum_packet(pkt_hdr[i], mbufs[i], pkt_template, task->cksum_offload);
 		pkt_idx = task_gen_next_pkt_idx(task, pkt_idx);
 	}
 }
@@ -558,17 +544,48 @@ static void task_gen_load_and_prefetch(struct rte_mbuf **mbufs, uint8_t **pkt_hd
 static void task_gen_build_packets(struct task_gen *task, struct rte_mbuf **mbufs, uint8_t **pkt_hdr, uint32_t count)
 {
 	uint64_t will_send_bytes = 0;
+	uint64_t mac_bcast = 0xFFFFFFFFFFFF;
 
 	for (uint16_t i = 0; i < count; ++i) {
-		struct pkt_template *pkt_template = &task->pkt_template[task->pkt_idx];
-
-		pkt_template_init_mbuf(pkt_template, mbufs[i], pkt_hdr[i]);
-		if (task->lat_enabled) {
-			task->pkt_tsc_offset[i] = bytes_to_tsc(task, will_send_bytes);
-
-			will_send_bytes += pkt_len_to_wire_size(pkt_template->len);
+		struct pkt_template *pktpl = &task->pkt_template[task->pkt_idx];
+		if (task->flags & FLAG_L3_GEN) {
+			if (unlikely((task->flags & FLAG_DST_MAC_KNOWN) == 0))  {
+				rte_pktmbuf_pkt_len(mbufs[i]) = 42;
+				rte_pktmbuf_data_len(mbufs[i]) = 42;
+				init_mbuf_seg(mbufs[i]);
+				struct ether_hdr_arp *hdr = (struct ether_hdr_arp *)pkt_hdr[i];
+				memcpy(&hdr->ether_hdr.d_addr.addr_bytes, &mac_bcast, 6);
+				memcpy(&hdr->ether_hdr.s_addr.addr_bytes, &pktpl->buf[6], 6);
+				hdr->ether_hdr.ether_type = ETYPE_ARP;
+				hdr->arp.htype = 0x100,
+				hdr->arp.ptype = 0x0008;
+				hdr->arp.hlen = 6;
+				hdr->arp.plen = 4;
+				hdr->arp.oper = 0x100;
+				hdr->arp.data.spa = pktpl->ip_src;
+				hdr->arp.data.tpa = task->gw_ip;
+				memset(&hdr->arp.data.tha, 0, sizeof(struct ether_addr));
+				memcpy(&hdr->arp.data.sha, &pktpl->buf[6], sizeof(struct ether_addr));
+			} else {
+				struct pkt_template *pkt_template = &task->pkt_template[task->pkt_idx];
+				pkt_template_init_mbuf(pkt_template, mbufs[i], pkt_hdr[i]);
+				struct ether_hdr *hdr = (struct ether_hdr *)pkt_hdr[i];
+				// Copy mac address we learn
+				memcpy(&hdr->d_addr.addr_bytes, &task->gw_mac, 6);
+				if (task->lat_enabled) {
+					task->pkt_tsc_offset[i] = bytes_to_tsc(task, will_send_bytes);
+					will_send_bytes += pkt_len_to_wire_size(pkt_template->len);
+				}
+			}
+		} else {
+			struct pkt_template *pkt_template = &task->pkt_template[task->pkt_idx];
+			pkt_template_init_mbuf(pkt_template, mbufs[i], pkt_hdr[i]);
+			struct ether_hdr *hdr = (struct ether_hdr *)pkt_hdr[i];
+			if (task->lat_enabled) {
+				task->pkt_tsc_offset[i] = bytes_to_tsc(task, will_send_bytes);
+				will_send_bytes += pkt_len_to_wire_size(pkt_template->len);
+			}
 		}
-
 		task->pkt_idx = task_gen_next_pkt_idx(task, task->pkt_idx);
 	}
 }
@@ -579,20 +596,54 @@ static void task_gen_update_config(struct task_gen *task)
 		task_gen_reset_token_time(task);
 }
 
-static void handle_gen_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static int handle_gen_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
-	PROX_ASSERT(n_pkts == 0);
-
 	struct task_gen *task = (struct task_gen *)tbase;
+	uint8_t out[MAX_PKT_BURST];
+
+	int i, j;
+	static struct my_arp_t arp_reply = {
+		.htype = 0x100,
+		.ptype = 8,
+		.hlen = 6,
+		.plen = 4,
+		.oper = 0x200
+	};
+
+	if (unlikely((task->flags & FLAG_L3_GEN) && (n_pkts != 0))) {
+		struct ether_hdr_arp *hdr;
+		for (j = 0; j < n_pkts; ++j) {
+			PREFETCH0(mbufs[j]);
+		}
+		for (j = 0; j < n_pkts; ++j) {
+			PREFETCH0(rte_pktmbuf_mtod(mbufs[j], void *));
+		}
+		for (j = 0; j < n_pkts; ++j) {
+			hdr = rte_pktmbuf_mtod(mbufs[j], struct ether_hdr_arp *);
+			if (hdr->ether_hdr.ether_type == ETYPE_ARP) {
+				if (memcmp(&hdr->arp, &arp_reply, 8) == 0) {
+					uint32_t ip = hdr->arp.data.spa;
+					// plog_info("Received ARP Reply for IP %x\n",ip);
+					memcpy(&task->gw_mac, &hdr->arp.data.sha, 6);;
+					task->flags |= FLAG_DST_MAC_KNOWN;
+					out[j] = OUT_HANDLED;
+				} else {
+					out[j] = OUT_DISCARD;
+				}
+			}
+			out[j] = OUT_DISCARD;
+		}
+		tx_pkt_drop_all(&task->base, mbufs, n_pkts, out);
+	}
 
 	task_gen_update_config(task);
 
 	if (task->pkt_count == 0) {
 		task_gen_reset_token_time(task);
-		return;
+		return 0;
 	}
 	if (!task->token_time.cfg.bpp)
-		return;
+		return 0;
 
 	token_time_update(&task->token_time, rte_rdtsc());
 
@@ -600,13 +651,13 @@ static void handle_gen_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, ui
 	const uint32_t send_bulk = task_gen_calc_send_bulk(task, &would_send_bytes);
 
 	if (send_bulk == 0)
-		return;
+		return 0;
 	task_gen_take_count(task, send_bulk);
 	task_gen_consume_tokens(task, would_send_bytes, send_bulk);
 
 	struct rte_mbuf **new_pkts = local_mbuf_refill_and_take(&task->local_mbuf, send_bulk);
 	if (new_pkts == NULL)
-		return;
+		return 0;
 	uint8_t *pkt_hdr[MAX_RING_BURST];
 
 	task_gen_load_and_prefetch(new_pkts, pkt_hdr, send_bulk);
@@ -619,8 +670,9 @@ static void handle_gen_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, ui
 	uint64_t tsc_before_tx;
 
 	tsc_before_tx = task_gen_write_latency(task, pkt_hdr, send_bulk);
-	task->base.tx_pkt(&task->base, new_pkts, send_bulk, NULL);
+	int ret = task->base.tx_pkt(&task->base, new_pkts, send_bulk, NULL);
 	task_gen_store_accuracy(task, send_bulk, tsc_before_tx);
+	return ret;
 }
 
 static void init_task_gen_seeds(struct task_gen *task)
@@ -746,7 +798,7 @@ static void task_gen_pkt_template_recalc_metadata(struct task_gen *task)
 
 	for (size_t i = 0; i < task->n_pkts; ++i) {
 		template = &task->pkt_template[i];
-		parse_l2_l3_len(template->buf, &template->l2_len, &template->l3_len);
+		parse_l2_l3_len(template->buf, &template->l2_len, &template->l3_len, template->len);
 	}
 }
 
@@ -758,6 +810,8 @@ static void task_gen_pkt_template_recalc_checksum(struct task_gen *task)
 	task->runtime_checksum_needed = 0;
 	for (size_t i = 0; i < task->n_pkts; ++i) {
 		template = &task->pkt_template[i];
+		if (template->l2_len == 0)
+			continue;
 		ip = (struct ipv4_hdr *)(template->buf + template->l2_len);
 
 		ip->hdr_checksum = 0;
@@ -798,7 +852,6 @@ static void task_gen_reset_pkt_templates_len(struct task_gen *task)
 	for (size_t i = 0; i < task->n_pkts; ++i) {
 		src = &task->pkt_template_orig[i];
 		dst = &task->pkt_template[i];
-		plog_info("copy len = %u\n", src->len);
 		dst->len = src->len;
 	}
 }
@@ -899,6 +952,13 @@ void task_gen_set_pkt_size(struct task_base *tbase, uint32_t pkt_size)
 	task->pkt_template[0].len = pkt_size;
 	check_all_pkt_size(task);
 	check_fields_in_bounds(task);
+}
+
+void task_gen_set_gateway_ip(struct task_base *tbase, uint32_t ip)
+{
+	struct task_gen *task = (struct task_gen *)tbase;
+	task->gw_ip = ip;
+	task->flags &= ~FLAG_DST_MAC_KNOWN;
 }
 
 void task_gen_set_rate(struct task_base *tbase, uint64_t bps)
@@ -1106,6 +1166,47 @@ static void init_task_gen(struct task_base *tbase, struct task_args *targ)
 			rte_memcpy(&task->pkt_template[i].buf[6], src_addr, 6);
 		}
 	}
+	if (!strcmp(targ->task_init->sub_mode_str, "l3")) {
+		// In L3 GEN, we need to receive ARP replies
+		task->flags = FLAG_L3_GEN;
+		task->gw_ip = rte_cpu_to_be_32(targ->gateway_ipv4);
+		for (uint32_t i = 0; i < task->n_pkts; ++i) {
+			// For all destination IP, ARP request will need to be sent
+			// Store position of Destination IP in template
+			int ip_dst_pos = 0;
+			int maybe_ipv4 = 0;
+			int l2_len = sizeof(struct ether_hdr);
+			struct vlan_hdr *vlan_hdr;
+			uint8_t *pkt = task->pkt_template[i].buf;
+			struct ether_hdr *eth_hdr = (struct ether_hdr*)pkt;
+			struct ipv4_hdr *ip;
+			uint16_t ether_type = eth_hdr->ether_type;
+
+			// Unstack VLAN tags
+			while (((ether_type == ETYPE_8021ad) || (ether_type == ETYPE_VLAN)) && (l2_len + sizeof(struct vlan_hdr) < task->pkt_template[i].len)) {
+				vlan_hdr = (struct vlan_hdr *)(pkt + l2_len);
+				l2_len +=4;
+				ether_type = vlan_hdr->eth_proto;
+			}
+			if ((ether_type == ETYPE_MPLSU) || (ether_type == ETYPE_MPLSM)) {
+				l2_len +=4;
+				maybe_ipv4 = 1;
+			}
+			if ((ether_type == ETYPE_IPv4) || maybe_ipv4) {
+				struct ipv4_hdr *ip = (struct ipv4_hdr *)(pkt + l2_len);
+				PROX_PANIC(ip->version_ihl >> 4 != 4, "IPv4 ether_type but IP version = %d != 4", ip->version_ihl >> 4);
+				// Even if IPv4 header contains options, options are after ip src and dst
+				ip_dst_pos = l2_len + sizeof(struct ipv4_hdr) - sizeof(uint32_t);
+				uint32_t *p = ((uint32_t *)(task->pkt_template[i].buf + ip_dst_pos - sizeof(uint32_t)));
+				task->pkt_template[i].ip_src = *p;
+			}
+		}
+	}
+	struct prox_port_cfg *port = find_reachable_port(targ);
+	if (port) {
+		task->cksum_offload = port->capabilities.tx_offload_cksum;
+	}
+
 }
 
 static struct task_init task_init_gen = {
@@ -1119,6 +1220,22 @@ static struct task_init task_init_gen = {
 	.flag_features = TASK_FEATURE_NEVER_DISCARDS | TASK_FEATURE_NO_RX | TASK_FEATURE_TXQ_FLAGS_NOOFFLOADS | TASK_FEATURE_TXQ_FLAGS_NOMULTSEGS,
 #else
 	.flag_features = TASK_FEATURE_NEVER_DISCARDS | TASK_FEATURE_NO_RX,
+#endif
+	.size = sizeof(struct task_gen)
+};
+
+static struct task_init task_init_gen_l3 = {
+	.mode_str = "gen",
+	.sub_mode_str = "l3",
+	.init = init_task_gen,
+	.handle = handle_gen_bulk,
+	.start = start,
+#ifdef SOFT_CRC
+	// For SOFT_CRC, no offload is needed. If both NOOFFLOADS and NOMULTSEGS flags are set the
+	// vector mode is used by DPDK, resulting (theoretically) in higher performance.
+	.flag_features = TASK_FEATURE_NEVER_DISCARDS | TASK_FEATURE_ZERO_RX | TASK_FEATURE_TXQ_FLAGS_NOOFFLOADS | TASK_FEATURE_TXQ_FLAGS_NOMULTSEGS|TASK_FEATURE_ZERO_RX,
+#else
+	.flag_features = TASK_FEATURE_NEVER_DISCARDS | TASK_FEATURE_ZERO_RX,
 #endif
 	.size = sizeof(struct task_gen)
 };
@@ -1140,5 +1257,6 @@ static struct task_init task_init_gen_pcap = {
 __attribute__((constructor)) static void reg_task_gen(void)
 {
 	reg_task(&task_init_gen);
+	reg_task(&task_init_gen_l3);
 	reg_task(&task_init_gen_pcap);
 }

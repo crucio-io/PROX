@@ -36,8 +36,9 @@
 #include <fcntl.h>
 
 #include "msr.h"
+#include "log.h"
 
-int msr_fd[64];
+int msr_fd[RTE_MAX_LCORE];
 int n_msr_fd;
 int msr_init(void)
 {
@@ -89,5 +90,6 @@ int msr_write(int lcore_id, uint64_t val, off_t offset)
 	if (sizeof(uint64_t) != pwrite(msr_fd[lcore_id], &val, sizeof(uint64_t), offset)) {
 		return -1;
 	}
+	plog_dbg("\t\tmsr_write(core %d, offset %x, val %lx)\n", lcore_id, (int)offset, val);
 	return 0;
 }

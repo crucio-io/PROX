@@ -43,7 +43,7 @@ struct task_l2fwd {
 	uint32_t runtime_flags;
 };
 
-static void handle_l2fwd_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static int handle_l2fwd_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	struct task_l2fwd *task = (struct task_l2fwd *)tbase;
 	struct ether_hdr *hdr;
@@ -75,7 +75,7 @@ static void handle_l2fwd_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, 
 			}
 		}
 	}
-	task->base.tx_pkt(&task->base, mbufs, n_pkts, NULL);
+	return task->base.tx_pkt(&task->base, mbufs, n_pkts, NULL);
 }
 
 static void init_task_l2fwd(struct task_base *tbase, struct task_args *targ)

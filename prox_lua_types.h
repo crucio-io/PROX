@@ -49,6 +49,7 @@ struct next_hop6;
 struct rte_acl_ctx;
 struct qinq_gre_map;
 
+#define MAX_HOP_INDEX  128
 enum l4gen_peer {PEER_SERVER, PEER_CLIENT};
 
 static const char *l4gen_peer_to_str(enum l4gen_peer peer)
@@ -126,6 +127,7 @@ const char *get_lua_to_errors(void);
 enum lua_place {STACK, TABLE, GLOBAL};
 int lua_getfrom(struct lua_State *L, enum lua_place from, const char *name);
 
+int lua_to_port(struct lua_State *L, enum lua_place from, const char *name, uint16_t *port);
 int lua_to_ip(struct lua_State *L, enum lua_place from, const char *name, uint32_t *ip);
 int lua_to_ip6(struct lua_State *L, enum lua_place from, const char *name, uint8_t *ip);
 int lua_to_mac(struct lua_State *L, enum lua_place from, const char *name, struct ether_addr *mac);

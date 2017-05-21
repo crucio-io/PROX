@@ -147,7 +147,7 @@ static inline uint8_t handle_qinq_decap6(struct task_qinq_decap6 *task, struct r
 	return 0;
 }
 
-static void handle_qinq_decap6_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static int handle_qinq_decap6_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	struct task_qinq_decap6 *task = (struct task_qinq_decap6 *)tbase;
 	uint8_t out[MAX_PKT_BURST];
@@ -169,7 +169,7 @@ static void handle_qinq_decap6_bulk(struct task_base *tbase, struct rte_mbuf **m
 	}
 #endif
 
-	task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
+	return task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
 }
 
 void update_arp_entries6(void* data)

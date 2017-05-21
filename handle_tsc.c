@@ -40,7 +40,7 @@ struct task_tsc {
 	struct task_base base;
 };
 
-static void handle_bulk_tsc(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
+static int handle_bulk_tsc(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)
 {
 	struct task_tsc *task = (struct task_tsc *)tbase;
 	const uint64_t rx_tsc = rte_rdtsc();
@@ -48,7 +48,7 @@ static void handle_bulk_tsc(struct task_base *tbase, struct rte_mbuf **mbufs, ui
 	for (uint16_t j = 0; j < n_pkts; ++j)
 		mbufs[j]->udata64 = rx_tsc;
 
-	task->base.tx_pkt(&task->base, mbufs, n_pkts, NULL);
+	return task->base.tx_pkt(&task->base, mbufs, n_pkts, NULL);
 }
 
 static struct task_init task_init = {

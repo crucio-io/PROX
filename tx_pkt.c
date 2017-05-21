@@ -66,9 +66,10 @@ static inline void buf_pkt_all(struct task_base *tbase, struct rte_mbuf **mbufs,
 
 /* The following help functions also report stats. Therefore we need
    to pass the task_base struct. */
-static inline void txhw_drop(const struct port_queue *port_queue, struct rte_mbuf **mbufs, uint16_t n_pkts, __attribute__((unused)) struct task_base *tbase)
+static inline int txhw_drop(const struct port_queue *port_queue, struct rte_mbuf **mbufs, uint16_t n_pkts, __attribute__((unused)) struct task_base *tbase)
 {
 	uint16_t ntx;
+	int ret;
 
 	/* TX vector mode can't transmit more than 32 packets */
 	if (n_pkts > MAX_PMD_TX) {
@@ -79,6 +80,7 @@ static inline void txhw_drop(const struct port_queue *port_queue, struct rte_mbu
 	}
 
 	TASK_STATS_ADD_TX(&tbase->aux->stats, ntx);
+	ret =  n_pkts - ntx;
 	if (ntx < n_pkts) {
 		TASK_STATS_ADD_DROP_TX_FAIL(&tbase->aux->stats, n_pkts - ntx);
 		if (tbase->tx_pkt == tx_pkt_bw) {
@@ -95,11 +97,13 @@ static inline void txhw_drop(const struct port_queue *port_queue, struct rte_mbu
 			} while (ntx < n_pkts);
 		}
 	}
+	return ret;
 }
 
-static inline void txhw_no_drop(const struct port_queue *port_queue, struct rte_mbuf **mbufs, uint16_t n_pkts, __attribute__((unused)) struct task_base *tbase)
+static inline int txhw_no_drop(const struct port_queue *port_queue, struct rte_mbuf **mbufs, uint16_t n_pkts, __attribute__((unused)) struct task_base *tbase)
 {
 	uint16_t ret;
+	uint16_t n = n_pkts;
 
 	TASK_STATS_ADD_TX(&tbase->aux->stats, n_pkts);
 
@@ -109,13 +113,16 @@ static inline void txhw_no_drop(const struct port_queue *port_queue, struct rte_
 		n_pkts -= ret;
 	}
 	while (n_pkts);
+	return (n != ret);
 }
 
-static inline void ring_enq_drop(struct rte_ring *ring, struct rte_mbuf *const *mbufs, uint16_t n_pkts, __attribute__((unused)) struct task_base *tbase)
+static inline int ring_enq_drop(struct rte_ring *ring, struct rte_mbuf *const *mbufs, uint16_t n_pkts, __attribute__((unused)) struct task_base *tbase)
 {
+	int ret = 0;
 	/* return 0 on succes, -ENOBUFS on failure */
 	// Rings can be single or multiproducer (ctrl rings are multi producer)
 	if (unlikely(rte_ring_enqueue_bulk(ring, (void *const *)mbufs, n_pkts))) {
+		ret = n_pkts;
 		if (tbase->tx_pkt == tx_pkt_bw) {
 			uint32_t drop_bytes = 0;
 			for (uint16_t i = 0; i < n_pkts; ++i) {
@@ -134,12 +141,17 @@ static inline void ring_enq_drop(struct rte_ring *ring, struct rte_mbuf *const *
 	else {
 		TASK_STATS_ADD_TX(&tbase->aux->stats, n_pkts);
 	}
+	return ret;
 }
 
-static inline void ring_enq_no_drop(struct rte_ring *ring, struct rte_mbuf *const *mbufs, uint16_t n_pkts, __attribute__((unused)) struct task_base *tbase)
+static inline int ring_enq_no_drop(struct rte_ring *ring, struct rte_mbuf *const *mbufs, uint16_t n_pkts, __attribute__((unused)) struct task_base *tbase)
 {
-	while (rte_ring_enqueue_bulk(ring, (void *const *)mbufs, n_pkts));
+	int i = 0;
+	while (rte_ring_enqueue_bulk(ring, (void *const *)mbufs, n_pkts)) {
+		i++;
+	};
 	TASK_STATS_ADD_TX(&tbase->aux->stats, n_pkts);
+	return (i != 0);
 }
 
 void flush_queues_hw(struct task_base *tbase)
@@ -273,14 +285,15 @@ uint16_t tx_try_hw1(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n
 	return sent;
 }
 
-void tx_pkt_no_drop_never_discard_hw1_lat_opt(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, __attribute__((unused)) uint8_t *out)
+int tx_pkt_no_drop_never_discard_hw1_lat_opt(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, __attribute__((unused)) uint8_t *out)
 {
-	txhw_no_drop(&tbase->tx_params_hw.tx_port_queue[0], mbufs, n_pkts, tbase);
+	return txhw_no_drop(&tbase->tx_params_hw.tx_port_queue[0], mbufs, n_pkts, tbase);
 }
 
-void tx_pkt_no_drop_never_discard_hw1_thrpt_opt(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, __attribute__((unused)) uint8_t *out)
+int tx_pkt_no_drop_never_discard_hw1_thrpt_opt(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, __attribute__((unused)) uint8_t *out)
 {
 	static uint8_t fake_out[MAX_PKT_BURST] = {0};
+	int ret = 0;
 	if (n_pkts == MAX_PKT_BURST) {
 		// First xmit what was queued
         	uint16_t prod, cons;
@@ -292,22 +305,24 @@ void tx_pkt_no_drop_never_discard_hw1_thrpt_opt(struct task_base *tbase, struct 
                 	tbase->flags &= ~FLAG_TX_FLUSH;
                 	tbase->ws_mbuf->idx[0].prod = 0;
                 	tbase->ws_mbuf->idx[0].cons = 0;
-                	txhw_no_drop(&tbase->tx_params_hw.tx_port_queue[0], tbase->ws_mbuf->mbuf[0] + (cons & WS_MBUF_MASK), (uint16_t)(prod - cons), tbase);
+                	ret+= txhw_no_drop(&tbase->tx_params_hw.tx_port_queue[0], tbase->ws_mbuf->mbuf[0] + (cons & WS_MBUF_MASK), (uint16_t)(prod - cons), tbase);
 		}
-		txhw_no_drop(&tbase->tx_params_hw.tx_port_queue[0], mbufs, n_pkts, tbase);
+		ret+= txhw_no_drop(&tbase->tx_params_hw.tx_port_queue[0], mbufs, n_pkts, tbase);
 	} else {
-		tx_pkt_no_drop_hw(tbase, mbufs, n_pkts, fake_out);
+		ret+= tx_pkt_no_drop_hw(tbase, mbufs, n_pkts, fake_out);
 	}
+	return ret;
 }
 
-void tx_pkt_never_discard_hw1_lat_opt(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, __attribute__((unused)) uint8_t *out)
+int tx_pkt_never_discard_hw1_lat_opt(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, __attribute__((unused)) uint8_t *out)
 {
-	txhw_drop(&tbase->tx_params_hw.tx_port_queue[0], mbufs, n_pkts, tbase);
+	return txhw_drop(&tbase->tx_params_hw.tx_port_queue[0], mbufs, n_pkts, tbase);
 }
 
-void tx_pkt_never_discard_hw1_thrpt_opt(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, __attribute__((unused)) uint8_t *out)
+int tx_pkt_never_discard_hw1_thrpt_opt(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, __attribute__((unused)) uint8_t *out)
 {
 	static uint8_t fake_out[MAX_PKT_BURST] = {0};
+	int ret = 0;
 	if (n_pkts == MAX_PKT_BURST) {
 		// First xmit what was queued
         	uint16_t prod, cons;
@@ -319,30 +334,32 @@ void tx_pkt_never_discard_hw1_thrpt_opt(struct task_base *tbase, struct rte_mbuf
                 	tbase->flags &= ~FLAG_TX_FLUSH;
                 	tbase->ws_mbuf->idx[0].prod = 0;
                 	tbase->ws_mbuf->idx[0].cons = 0;
-                	txhw_drop(&tbase->tx_params_hw.tx_port_queue[0], tbase->ws_mbuf->mbuf[0] + (cons & WS_MBUF_MASK), (uint16_t)(prod - cons), tbase);
+                	ret+= txhw_drop(&tbase->tx_params_hw.tx_port_queue[0], tbase->ws_mbuf->mbuf[0] + (cons & WS_MBUF_MASK), (uint16_t)(prod - cons), tbase);
 		}
-		txhw_drop(&tbase->tx_params_hw.tx_port_queue[0], mbufs, n_pkts, tbase);
+		ret+= txhw_drop(&tbase->tx_params_hw.tx_port_queue[0], mbufs, n_pkts, tbase);
 	} else {
-		tx_pkt_hw(tbase, mbufs, n_pkts, fake_out);
+		ret+= tx_pkt_hw(tbase, mbufs, n_pkts, fake_out);
 	}
+	return ret;
 }
 
 /* Transmit to hw using tx_params_hw_sw structure
    This function is used  to transmit to hw when tx_params_hw_sw should be used
    i.e. when the task needs to transmit both to hw and sw */
-void tx_pkt_no_drop_never_discard_hw1_no_pointer(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, __attribute__((unused)) uint8_t *out)
+int tx_pkt_no_drop_never_discard_hw1_no_pointer(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, __attribute__((unused)) uint8_t *out)
 {
 	txhw_no_drop(&tbase->tx_params_hw_sw.tx_port_queue, mbufs, n_pkts, tbase);
+	return 0;
 }
 
-void tx_pkt_no_drop_never_discard_sw1(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, __attribute__((unused)) uint8_t *out)
+int tx_pkt_no_drop_never_discard_sw1(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, __attribute__((unused)) uint8_t *out)
 {
-	ring_enq_no_drop(tbase->tx_params_sw.tx_rings[0], mbufs, n_pkts, tbase);
+	return ring_enq_no_drop(tbase->tx_params_sw.tx_rings[0], mbufs, n_pkts, tbase);
 }
 
-void tx_pkt_never_discard_sw1(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, __attribute__((unused)) uint8_t *out)
+int tx_pkt_never_discard_sw1(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, __attribute__((unused)) uint8_t *out)
 {
-	ring_enq_drop(tbase->tx_params_sw.tx_rings[0], mbufs, n_pkts, tbase);
+	return ring_enq_drop(tbase->tx_params_sw.tx_rings[0], mbufs, n_pkts, tbase);
 }
 
 static uint16_t tx_pkt_free_dropped(__attribute__((unused)) struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, uint8_t *out)
@@ -378,39 +395,45 @@ static uint16_t tx_pkt_free_dropped(__attribute__((unused)) struct task_base *tb
 	return n_pkts;
 }
 
-void tx_pkt_no_drop_hw1(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, uint8_t *out)
+int tx_pkt_no_drop_hw1(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, uint8_t *out)
+{
+	const uint16_t n_kept = tx_pkt_free_dropped(tbase, mbufs, n_pkts, out);
+	int ret = 0;
+
+	if (likely(n_kept))
+		ret = txhw_no_drop(&tbase->tx_params_hw.tx_port_queue[0], mbufs, n_kept, tbase);
+	return ret;
+}
+
+int tx_pkt_no_drop_sw1(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, uint8_t *out)
+{
+	const uint16_t n_kept = tx_pkt_free_dropped(tbase, mbufs, n_pkts, out);
+	int ret = 0;
+
+	if (likely(n_kept))
+		ret = ring_enq_no_drop(tbase->tx_params_sw.tx_rings[0], mbufs, n_kept, tbase);
+	return ret;
+}
+
+int tx_pkt_hw1(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, uint8_t *out)
 {
 	const uint16_t n_kept = tx_pkt_free_dropped(tbase, mbufs, n_pkts, out);
 
 	if (likely(n_kept))
-		txhw_no_drop(&tbase->tx_params_hw.tx_port_queue[0], mbufs, n_kept, tbase);
+		return txhw_drop(&tbase->tx_params_hw.tx_port_queue[0], mbufs, n_kept, tbase);
+	return n_pkts;
 }
 
-void tx_pkt_no_drop_sw1(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, uint8_t *out)
+int tx_pkt_sw1(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, uint8_t *out)
 {
 	const uint16_t n_kept = tx_pkt_free_dropped(tbase, mbufs, n_pkts, out);
 
 	if (likely(n_kept))
-		ring_enq_no_drop(tbase->tx_params_sw.tx_rings[0], mbufs, n_kept, tbase);
+		return ring_enq_drop(tbase->tx_params_sw.tx_rings[0], mbufs, n_kept, tbase);
+	return 0;
 }
 
-void tx_pkt_hw1(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, uint8_t *out)
-{
-	const uint16_t n_kept = tx_pkt_free_dropped(tbase, mbufs, n_pkts, out);
-
-	if (likely(n_kept))
-		txhw_drop(&tbase->tx_params_hw.tx_port_queue[0], mbufs, n_kept, tbase);
-}
-
-void tx_pkt_sw1(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, uint8_t *out)
-{
-	const uint16_t n_kept = tx_pkt_free_dropped(tbase, mbufs, n_pkts, out);
-
-	if (likely(n_kept))
-		ring_enq_drop(tbase->tx_params_sw.tx_rings[0], mbufs, n_kept, tbase);
-}
-
-void tx_pkt_self(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, uint8_t *out)
+int tx_pkt_self(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, uint8_t *out)
 {
 	const uint16_t n_kept = tx_pkt_free_dropped(tbase, mbufs, n_pkts, out);
 
@@ -420,9 +443,10 @@ void tx_pkt_self(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_
 	for (uint16_t i = 0; i < n_kept; ++i) {
 		tx_mbuf[i] = mbufs[i];
 	}
+	return 0;
 }
 
-void tx_pkt_never_discard_self(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, __attribute__((unused)) uint8_t *out)
+int tx_pkt_never_discard_self(struct task_base *tbase, struct rte_mbuf **mbufs, const uint16_t n_pkts, __attribute__((unused)) uint8_t *out)
 {
 	TASK_STATS_ADD_TX(&tbase->aux->stats, n_pkts);
 	tbase->ws_mbuf->idx[0].nb_rx = n_pkts;
@@ -430,10 +454,12 @@ void tx_pkt_never_discard_self(struct task_base *tbase, struct rte_mbuf **mbufs,
 	for (uint16_t i = 0; i < n_pkts; ++i) {
 		tx_mbuf[i] = mbufs[i];
 	}
+	return 0;
 }
 
-void tx_pkt_no_drop_hw(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts, uint8_t *out)
+int tx_pkt_no_drop_hw(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts, uint8_t *out)
 {
+	int ret = 0;
 	buf_pkt_all(tbase, mbufs, n_pkts, out);
 
 	const uint8_t nb_bufs = tbase->tx_params_hw.nb_txports;
@@ -446,13 +472,15 @@ void tx_pkt_no_drop_hw(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_
 		if (((uint16_t)(prod - cons)) >= MAX_PKT_BURST) {
 			tbase->flags &= ~FLAG_TX_FLUSH;
 			tbase->ws_mbuf->idx[i].cons = cons + MAX_PKT_BURST;
-			txhw_no_drop(&tbase->tx_params_hw.tx_port_queue[i], tbase->ws_mbuf->mbuf[i] + (cons & WS_MBUF_MASK), MAX_PKT_BURST, tbase);
+			ret+= txhw_no_drop(&tbase->tx_params_hw.tx_port_queue[i], tbase->ws_mbuf->mbuf[i] + (cons & WS_MBUF_MASK), MAX_PKT_BURST, tbase);
 		}
 	}
+	return ret;
 }
 
-void tx_pkt_no_drop_sw(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts, uint8_t *out)
+int tx_pkt_no_drop_sw(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts, uint8_t *out)
 {
+	int ret = 0;
 	buf_pkt_all(tbase, mbufs, n_pkts, out);
 
 	const uint8_t nb_bufs = tbase->tx_params_sw.nb_txrings;
@@ -465,13 +493,15 @@ void tx_pkt_no_drop_sw(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_
 		if (((uint16_t)(prod - cons)) >= MAX_PKT_BURST) {
 			tbase->flags &= ~FLAG_TX_FLUSH;
 			tbase->ws_mbuf->idx[i].cons = cons + MAX_PKT_BURST;
-			ring_enq_no_drop(tbase->tx_params_sw.tx_rings[i], tbase->ws_mbuf->mbuf[i] + (cons & WS_MBUF_MASK), MAX_PKT_BURST, tbase);
+			ret += ring_enq_no_drop(tbase->tx_params_sw.tx_rings[i], tbase->ws_mbuf->mbuf[i] + (cons & WS_MBUF_MASK), MAX_PKT_BURST, tbase);
 		}
 	}
+	return ret;
 }
 
-void tx_pkt_hw(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts, uint8_t *out)
+int tx_pkt_hw(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts, uint8_t *out)
 {
+	int ret = 0;
 	buf_pkt_all(tbase, mbufs, n_pkts, out);
 
 	const uint8_t nb_bufs = tbase->tx_params_hw.nb_txports;
@@ -484,13 +514,15 @@ void tx_pkt_hw(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts
 		if (((uint16_t)(prod - cons)) >= MAX_PKT_BURST) {
 			tbase->flags &= ~FLAG_TX_FLUSH;
 			tbase->ws_mbuf->idx[i].cons = cons + MAX_PKT_BURST;
-			txhw_drop(&tbase->tx_params_hw.tx_port_queue[i], tbase->ws_mbuf->mbuf[i] + (cons & WS_MBUF_MASK), MAX_PKT_BURST, tbase);
+			ret += txhw_drop(&tbase->tx_params_hw.tx_port_queue[i], tbase->ws_mbuf->mbuf[i] + (cons & WS_MBUF_MASK), MAX_PKT_BURST, tbase);
 		}
 	}
+	return ret;
 }
 
-void tx_pkt_sw(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts, uint8_t *out)
+int tx_pkt_sw(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts, uint8_t *out)
 {
+	int ret = 0;
 	buf_pkt_all(tbase, mbufs, n_pkts, out);
 
 	const uint8_t nb_bufs = tbase->tx_params_sw.nb_txrings;
@@ -502,13 +534,15 @@ void tx_pkt_sw(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts
 		if (((uint16_t)(prod - cons)) >= MAX_PKT_BURST) {
 			tbase->flags &= ~FLAG_TX_FLUSH;
 			tbase->ws_mbuf->idx[i].cons = cons + MAX_PKT_BURST;
-			ring_enq_drop(tbase->tx_params_sw.tx_rings[i], tbase->ws_mbuf->mbuf[i] + (cons & WS_MBUF_MASK), MAX_PKT_BURST, tbase);
+			ret+= ring_enq_drop(tbase->tx_params_sw.tx_rings[i], tbase->ws_mbuf->mbuf[i] + (cons & WS_MBUF_MASK), MAX_PKT_BURST, tbase);
 		}
 	}
+	return ret;
 }
 
-void tx_pkt_trace(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts, uint8_t *out)
+int tx_pkt_trace(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts, uint8_t *out)
 {
+	int ret = 0;
 	plog_info("Tracing %d pkts\n", tbase->aux->task_rt_dump.cur_trace);
 
 	for (uint32_t i = 0; i < tbase->aux->task_rt_dump.cur_trace; ++i) {
@@ -531,7 +565,7 @@ void tx_pkt_trace(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_p
 #endif
 			rte_pktmbuf_data_len(&tmp) = tbase->aux->task_rt_dump.pkt_cpy_len[j];
 			rte_pktmbuf_pkt_len(&tmp) = tbase->aux->task_rt_dump.pkt_cpy_len[j];
-			tmp.buf_addr = tbase->aux->task_rt_dump.pkt_cpy;
+			tmp.buf_addr = tbase->aux->task_rt_dump.pkt_cpy[j];
 			plogd_info(&tmp, "Trace RX: ");
 		}
 
@@ -543,7 +577,7 @@ void tx_pkt_trace(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_p
 		} else
 			plogd_info(mbufs[i], "Trace TX: ");
 	}
-	tbase->aux->tx_pkt_orig(tbase, mbufs, n_pkts, out);
+	ret = tbase->aux->tx_pkt_orig(tbase, mbufs, n_pkts, out);
 
 	/* Unset by TX when n_trace = 0 */
 	if (0 == tbase->aux->task_rt_dump.n_trace) {
@@ -551,11 +585,13 @@ void tx_pkt_trace(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_p
 		tbase->aux->tx_pkt_orig = NULL;
 		task_base_del_rx_pkt_function(tbase, rx_pkt_trace);
 	}
+	return ret;
 }
 
-void tx_pkt_dump(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts, uint8_t *out)
+int tx_pkt_dump(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts, uint8_t *out)
 {
 	uint32_t n_dump = tbase->aux->task_rt_dump.n_print_tx;
+	int ret = 0;
 
 	n_dump = n_pkts < n_dump? n_pkts : n_dump;
 	for (uint32_t i = 0; i < n_dump; ++i) {
@@ -566,24 +602,25 @@ void tx_pkt_dump(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pk
 	}
 	tbase->aux->task_rt_dump.n_print_tx -= n_dump;
 
-	tbase->aux->tx_pkt_orig(tbase, mbufs, n_pkts, out);
+	ret = tbase->aux->tx_pkt_orig(tbase, mbufs, n_pkts, out);
 
 	if (0 == tbase->aux->task_rt_dump.n_print_tx) {
 		tbase->tx_pkt = tbase->aux->tx_pkt_orig;
 		tbase->aux->tx_pkt_orig = NULL;
 	}
+	return ret;
 }
 
 /* Gather the distribution of the number of packets that have been
    xmitted from one TX call. Since the value is only modified by the
    task that xmits the packet, no atomic operation is needed. */
-void tx_pkt_distr(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts, uint8_t *out)
+int tx_pkt_distr(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts, uint8_t *out)
 {
 	tbase->aux->tx_bucket[n_pkts]++;
-	tbase->aux->tx_pkt_orig(tbase, mbufs, n_pkts, out);
+	return tbase->aux->tx_pkt_orig(tbase, mbufs, n_pkts, out);
 }
 
-void tx_pkt_bw(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts, uint8_t *out)
+int tx_pkt_bw(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts, uint8_t *out)
 {
 	uint32_t tx_bytes = 0;
 	uint32_t drop_bytes = 0;
@@ -597,13 +634,23 @@ void tx_pkt_bw(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts
 
 	TASK_STATS_ADD_TX_BYTES(&tbase->aux->stats, tx_bytes);
 	TASK_STATS_ADD_DROP_BYTES(&tbase->aux->stats, drop_bytes);
-	tbase->aux->tx_pkt_orig(tbase, mbufs, n_pkts, out);
+	return tbase->aux->tx_pkt_orig(tbase, mbufs, n_pkts, out);
 }
 
-void tx_pkt_drop_all(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts, uint8_t *out)
+int tx_pkt_drop_all(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts, uint8_t *out)
 {
 	for (uint16_t j = 0; j < n_pkts; ++j) {
 		rte_pktmbuf_free(mbufs[j]);
 	}
-	TASK_STATS_ADD_DROP_HANDLED(&tbase->aux->stats, n_pkts);
+	if (out == NULL)
+		TASK_STATS_ADD_DROP_HANDLED(&tbase->aux->stats, n_pkts);
+	else {
+		for (uint16_t j = 0; j < n_pkts; ++j) {
+			if (out[j] == OUT_HANDLED)
+				TASK_STATS_ADD_DROP_HANDLED(&tbase->aux->stats, 1);
+			else
+				TASK_STATS_ADD_DROP_DISCARD(&tbase->aux->stats, 1);
+		}
+	}
+	return n_pkts;
 }

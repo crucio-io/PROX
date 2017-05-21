@@ -119,7 +119,7 @@ void init_pipe_create_in_out(struct task_pipe *tpipe, struct task_args *targ)
 				.ops = &rte_port_ring_writer_ops,
 				.arg_create = &port_ring_params,
 				.f_action = NULL,	//TODO
-#ifndef RTE_VER_YEAR
+#if RTE_VERSION < RTE_VERSION_NUM(16,4,0,0)
 				.f_action_bulk = NULL,	//TODO
 #endif
 				.arg_ah = NULL,
@@ -144,7 +144,7 @@ void init_pipe_create_in_out(struct task_pipe *tpipe, struct task_args *targ)
 				.ops = &rte_port_ethdev_writer_ops,
 				.arg_create = &port_ethdev_params,
 				.f_action = NULL,	//TODO
-#ifndef RTE_VER_YEAR
+#if RTE_VERSION < RTE_VERSION_NUM(16,4,0,0)
 				.f_action_bulk = NULL,	//TODO
 #endif
 				.arg_ah = NULL,
@@ -240,7 +240,7 @@ void init_pipe_check(struct task_pipe *tpipe, struct task_args *targ)
 
 /* This function will panic on purpose: tasks based on Packet Framework
    pipelines should not be invoked via the usual task_base.handle_bulk method */
-void handle_pipe(struct task_base *tbase,
+int handle_pipe(struct task_base *tbase,
 		__attribute__((unused)) struct rte_mbuf **mbufs,
 		__attribute__((unused)) uint16_t n_pkts)
 {
@@ -256,6 +256,7 @@ void handle_pipe(struct task_base *tbase,
 		}
 	}
 	PROX_PANIC(1, "Error: cannot find task on core %u\n", lcore_id);
+	return 0;
 }
 
 int thread_pipeline(struct lcore_cfg *lconf)
