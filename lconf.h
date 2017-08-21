@@ -1,5 +1,6 @@
 /*
-  Copyright(c) 2010-2016 Intel Corporation.
+  Copyright(c) 2010-2017 Intel Corporation.
+  Copyright(c) 2016-2017 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -91,6 +92,7 @@ struct lcore_cfg {
 	struct task_base	*tasks_all[MAX_TASKS_PER_CORE];
 	int                     task_is_running[MAX_TASKS_PER_CORE];
 	uint8_t			n_tasks_all;
+	pthread_t		thread_id;
 
 	/* Following variables are not accessed in main loop */
 	uint32_t		flags;

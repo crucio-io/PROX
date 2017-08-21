@@ -1,5 +1,6 @@
 /*
-  Copyright(c) 2010-2016 Intel Corporation.
+  Copyright(c) 2010-2017 Intel Corporation.
+  Copyright(c) 2016-2017 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -75,13 +76,21 @@ static uint64_t tsc_ctrl(struct lcore_cfg *lconf)
 
 	for (uint8_t task_id = 0; task_id < n_tasks_all; ++task_id) {
 		if (lconf->ctrl_rings_m[task_id] && lconf->ctrl_func_m[task_id]) {
+#if RTE_VERSION < RTE_VERSION_NUM(17,5,0,1)
 			n_msgs = rte_ring_sc_dequeue_burst(lconf->ctrl_rings_m[task_id], msgs, MAX_RING_BURST);
+#else
+			n_msgs = rte_ring_sc_dequeue_burst(lconf->ctrl_rings_m[task_id], msgs, MAX_RING_BURST, NULL);
+#endif
 			if (n_msgs) {
 				lconf->ctrl_func_m[task_id](lconf->tasks_all[task_id], msgs, n_msgs);
 			}
 		}
 		if (lconf->ctrl_rings_p[task_id] && lconf->ctrl_func_p[task_id]) {
+#if RTE_VERSION < RTE_VERSION_NUM(17,5,0,1)
 			n_msgs = rte_ring_sc_dequeue_burst(lconf->ctrl_rings_p[task_id], msgs, MAX_RING_BURST);
+#else
+			n_msgs = rte_ring_sc_dequeue_burst(lconf->ctrl_rings_p[task_id], msgs, MAX_RING_BURST, NULL);
+#endif
 			if (n_msgs) {
 				lconf->ctrl_func_p[task_id](lconf->tasks_all[task_id], (struct rte_mbuf **)msgs, n_msgs);
 			}

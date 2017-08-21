@@ -1,5 +1,6 @@
 /*
-  Copyright(c) 2010-2016 Intel Corporation.
+  Copyright(c) 2010-2017 Intel Corporation.
+  Copyright(c) 2016-2017 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -79,5 +80,7 @@ void cmd_set_cache_class(uint32_t lcore_id, uint32_t set);
 void cmd_cache_reset(void);
 
 void cmd_reset_port(uint8_t port_id);
+int reconnect_task(uint32_t lcore_id, uint32_t task_id);
+int bypass_task(uint32_t lcore_id, uint32_t task_id);
 
 #endif /* _COMMANDS_H_ */

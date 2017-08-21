@@ -1,5 +1,6 @@
 /*
-  Copyright(c) 2010-2016 Intel Corporation.
+  Copyright(c) 2010-2017 Intel Corporation.
+  Copyright(c) 2016-2017 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -121,7 +122,11 @@ static inline int ring_enq_drop(struct rte_ring *ring, struct rte_mbuf *const *m
 	int ret = 0;
 	/* return 0 on succes, -ENOBUFS on failure */
 	// Rings can be single or multiproducer (ctrl rings are multi producer)
+#if RTE_VERSION < RTE_VERSION_NUM(17,5,0,1)
 	if (unlikely(rte_ring_enqueue_bulk(ring, (void *const *)mbufs, n_pkts))) {
+#else
+	if (unlikely(rte_ring_enqueue_bulk(ring, (void *const *)mbufs, n_pkts, NULL) == 0)) {
+#endif
 		ret = n_pkts;
 		if (tbase->tx_pkt == tx_pkt_bw) {
 			uint32_t drop_bytes = 0;
@@ -147,7 +152,11 @@ static inline int ring_enq_drop(struct rte_ring *ring, struct rte_mbuf *const *m
 static inline int ring_enq_no_drop(struct rte_ring *ring, struct rte_mbuf *const *mbufs, uint16_t n_pkts, __attribute__((unused)) struct task_base *tbase)
 {
 	int i = 0;
+#if RTE_VERSION < RTE_VERSION_NUM(17,5,0,1)
 	while (rte_ring_enqueue_bulk(ring, (void *const *)mbufs, n_pkts)) {
+#else
+	while (rte_ring_enqueue_bulk(ring, (void *const *)mbufs, n_pkts, NULL) == 0) {
+#endif
 		i++;
 	};
 	TASK_STATS_ADD_TX(&tbase->aux->stats, n_pkts);
@@ -247,14 +256,22 @@ uint16_t tx_try_sw1(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n
 	n_bulks = n_pkts >> __builtin_ctz(bulk_size);
 
 	for (int i = 0; i < n_bulks; i++) {
+#if RTE_VERSION < RTE_VERSION_NUM(17,5,0,1)
 		ret = rte_ring_enqueue_burst(tbase->tx_params_sw.tx_rings[0], (void *const *)mbufs, bulk_size);
+#else
+		ret = rte_ring_enqueue_burst(tbase->tx_params_sw.tx_rings[0], (void *const *)mbufs, bulk_size, NULL);
+#endif
 		mbufs += ret;
 		sent += ret;
 		if (ret != bulk_size)
 			break;
 	}
 	if ((ret == bulk_size) && (n_pkts & (bulk_size - 1))) {
+#if RTE_VERSION < RTE_VERSION_NUM(17,5,0,1)
 		ret = rte_ring_enqueue_burst(tbase->tx_params_sw.tx_rings[0], (void *const *)mbufs, (n_pkts & (bulk_size - 1)));
+#else
+		ret = rte_ring_enqueue_burst(tbase->tx_params_sw.tx_rings[0], (void *const *)mbufs, (n_pkts & (bulk_size - 1)), NULL);
+#endif
 		mbufs += ret;
 		sent += ret;
 	}
@@ -543,6 +560,14 @@ int tx_pkt_sw(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts,
 int tx_pkt_trace(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts, uint8_t *out)
 {
 	int ret = 0;
+	if (tbase->aux->task_rt_dump.cur_trace == 0) {
+		// No packet received since dumping...
+		// So the transmitted packets should not be linked to received packets
+		tbase->aux->task_rt_dump.n_print_tx = tbase->aux->task_rt_dump.n_trace;
+		tbase->aux->task_rt_dump.n_trace = 0;
+		task_base_del_rx_pkt_function(tbase, rx_pkt_trace);
+		return tx_pkt_dump(tbase, mbufs, n_pkts, out);
+	}
 	plog_info("Tracing %d pkts\n", tbase->aux->task_rt_dump.cur_trace);
 
 	for (uint32_t i = 0; i < tbase->aux->task_rt_dump.cur_trace; ++i) {

@@ -1,5 +1,6 @@
 /*
-  Copyright(c) 2010-2016 Intel Corporation.
+  Copyright(c) 2010-2017 Intel Corporation.
+  Copyright(c) 2016-2017 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -34,7 +35,7 @@
 #include <rte_version.h>
 #include <rte_eth_ring.h>
 #include <rte_mbuf.h>
-#if RTE_VERSION >= RTE_VERSION_NUM(2,1,0,0)
+#if (RTE_VERSION >= RTE_VERSION_NUM(2,1,0,0)) && (RTE_VERSION <= RTE_VERSION_NUM(17,5,0,1))
 #include <rte_eth_null.h>
 #endif
 
@@ -124,9 +125,9 @@ void init_rte_dev(int use_dummy_devices)
 	PROX_PANIC(use_dummy_devices && nb_ports, "Can't use dummy devices while there are also real ports\n");
 
 	if (use_dummy_devices) {
-#if RTE_VERSION >= RTE_VERSION_NUM(2,1,0,0)
-		plog_info("Creating %u dummy devices\n", prox_last_port_active());
+#if (RTE_VERSION >= RTE_VERSION_NUM(2,1,0,0)) && (RTE_VERSION <= RTE_VERSION_NUM(17,5,0,1))
 		nb_ports = prox_last_port_active() + 1;
+		plog_info("Creating %u dummy devices\n", nb_ports);
 
 		char port_name[32] = "0dummy_dev";
 		for (uint32_t i = 0; i < nb_ports; ++i) {
@@ -168,13 +169,13 @@ void init_rte_dev(int use_dummy_devices)
 		port_cfg->max_txq = dev_info.max_tx_queues;
 		port_cfg->max_rxq = dev_info.max_rx_queues;
 
-		plog_info("\tPort %u : driver='%s' tx_queues=%d rx_queues=%d\n", port_id, !strcmp(port_cfg->driver_name, "")? "null" : port_cfg->driver_name, port_cfg->max_txq, port_cfg->max_rxq);
 		if (!dev_info.pci_dev)
 			continue;
 
 		snprintf(port_cfg->pci_addr, sizeof(port_cfg->pci_addr),
 			 "%04x:%02x:%02x.%1x", dev_info.pci_dev->addr.domain, dev_info.pci_dev->addr.bus, dev_info.pci_dev->addr.devid, dev_info.pci_dev->addr.function);
 		strncpy(port_cfg->driver_name, dev_info.driver_name, sizeof(port_cfg->driver_name));
+		plog_info("\tPort %u : driver='%s' tx_queues=%d rx_queues=%d\n", port_id, !strcmp(port_cfg->driver_name, "")? "null" : port_cfg->driver_name, port_cfg->max_txq, port_cfg->max_rxq);
 
 		if (strncmp(port_cfg->driver_name, "rte_", 4) == 0) {
 			strncpy(port_cfg->short_name, prox_port_cfg[port_id].driver_name + 4, sizeof(port_cfg->short_name));
@@ -328,7 +329,7 @@ static void init_port(struct prox_port_cfg *port_cfg)
 		plog_info("\t\tOverriding link state interrupt configuration to '%s'\n", port_cfg->lsc_val? "enabled" : "disabled");
 	}
 	if (!strcmp(port_cfg->short_name, "vmxnet3")) {
-		if (port_cfg->n_txq < 512) {
+		if (port_cfg->n_txd < 512) {
 			// Vmxnet3 driver requires minimum 512 tx descriptors
 			plog_info("\t\tNumber of TX descriptors is set to 512 (minimum required for vmxnet3\n");
 			port_cfg->n_txd = 512;
@@ -359,7 +360,7 @@ static void init_port(struct prox_port_cfg *port_cfg)
 		PROX_PANIC(ret < 0, "\t\t\trte_eth_rx_queue_setup() failed on port %u: error %s (%d)\n", port_id, strerror(-ret), ret);
 	}
 	if (!strcmp(port_cfg->short_name, "virtio")) {
-		port_cfg->tx_conf.txq_flags = ETH_TXQ_FLAGS_NOOFFLOADS;
+		port_cfg->tx_conf.txq_flags |= ETH_TXQ_FLAGS_NOOFFLOADS;
 		plog_info("\t\tDisabling TX offloads (virtio does not support TX offloads)\n");
 	}
 
@@ -434,6 +435,18 @@ void init_port_all(void)
 			continue;
 		}
 		init_port(&prox_port_cfg[portid]);
+	}
+}
+
+void close_ports_atexit(void)
+{
+	uint8_t max_port_idx = prox_last_port_active() + 1;
+
+	for (uint8_t portid = 0; portid < max_port_idx; ++portid) {
+		if (!prox_port_cfg[portid].active) {
+			continue;
+		}
+		rte_eth_dev_close(portid);
 	}
 }
 

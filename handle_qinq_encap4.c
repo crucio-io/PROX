@@ -1,5 +1,6 @@
 /*
-  Copyright(c) 2010-2016 Intel Corporation.
+  Copyright(c) 2010-2017 Intel Corporation.
+  Copyright(c) 2016-2017 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -288,8 +289,7 @@ void init_qinq_gre_table(struct task_args *targ, struct qinq_gre_map *qinq_gre_m
 			nb_worker_threads = prox_port_cfg[targ->rx_port_queue[0].port].n_rxq;
 			worker_thread_id = targ->rx_port_queue[0].queue;
 		} else {
-			plog_err("Unexpected: unknown number of worker thread\n");
-			exit(EXIT_FAILURE);
+			PROX_PANIC(1, "Unexpected: unknown number of worker thread\n");
 		}
 		plog_info("\t\tUsing %d worker_threads id %d\n", nb_worker_threads, worker_thread_id);
 		for (uint32_t i = 0; i < qinq_gre_map->count; ++i) {

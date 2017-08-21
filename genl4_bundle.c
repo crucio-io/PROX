@@ -1,5 +1,6 @@
 /*
-  Copyright(c) 2010-2016 Intel Corporation.
+  Copyright(c) 2010-2017 Intel Corporation.
+  Copyright(c) 2016-2017 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -251,10 +252,7 @@ static int bundle_iterate_streams(struct bundle_ctx *bundle, struct bundle_ctx_p
 		}
 		else {
 			int a = rte_hash_del_key(pool->hash, &bundle->tuple);
-			if (a < 0) {
-				plogx_err("Del failed (%d)! during finished all bundle (%d)\n", a, bundle->cfg->n_stream_cfgs);
-				exit(-1);
-			}
+			PROX_PANIC(a < 0, "Del failed (%d)! during finished all bundle (%d)\n", a, bundle->cfg->n_stream_cfgs);
 			bundle_cleanup(bundle);
 			bundle_ctx_pool_put(pool, bundle);
 

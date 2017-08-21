@@ -1,5 +1,6 @@
 /*
-  Copyright(c) 2010-2016 Intel Corporation.
+  Copyright(c) 2010-2017 Intel Corporation.
+  Copyright(c) 2016-2017 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -53,6 +54,8 @@
 #define DSF_USE_DUMMY_DEVICES     0x00000800      /* Instead of relying on real PCI devices, create null devices instead */
 #define DSF_USE_DUMMY_CPU_TOPO    0x00001000      /* Instead of relying on the cpu topology, load a cpu toplogy that will work with all cfgs. */
 #define DSF_DISABLE_CMT           0x00002000      /* CMT disabled */
+#define DSF_LIST_TASK_MODES       0x00004000      /* list supported task modes and exit */
+#define DSF_ENABLE_BYPASS         0x00008000      /* Use Multi Producer rings to enable ring bypass */
 
 #define MAX_PATH_LEN 1024
 

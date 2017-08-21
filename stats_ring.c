@@ -1,5 +1,6 @@
 /*
-  Copyright(c) 2010-2016 Intel Corporation.
+  Copyright(c) 2010-2017 Intel Corporation.
+  Copyright(c) 2016-2017 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -31,6 +32,7 @@
 
 #include <inttypes.h>
 #include <rte_ring.h>
+#include <rte_version.h>
 
 #include "prox_malloc.h"
 #include "stats_ring.h"
@@ -166,5 +168,9 @@ void stats_ring_init(void)
 	   most one free entry in the ring to distinguish between
 	   full/empty. */
 	for (uint16_t ring_id = 0; ring_id < rsm->n_rings; ++ring_id)
+#if RTE_VERSION < RTE_VERSION_NUM(17,5,0,1)
 		rsm->ring_stats[ring_id].size = rsm->ring_stats[ring_id].ring->prod.size - 1;
+#else
+		rsm->ring_stats[ring_id].size = rsm->ring_stats[ring_id].ring->size - 1;
+#endif
 }

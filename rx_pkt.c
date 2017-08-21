@@ -1,5 +1,6 @@
 /*
-  Copyright(c) 2010-2016 Intel Corporation.
+  Copyright(c) 2010-2017 Intel Corporation.
+  Copyright(c) 2016-2017 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -175,9 +176,17 @@ static uint16_t ring_deq(struct rte_ring *r, struct rte_mbuf **mbufs)
 {
 	void **v_mbufs = (void **)mbufs;
 #ifdef BRAS_RX_BULK
+#if RTE_VERSION < RTE_VERSION_NUM(17,5,0,1)
 	return rte_ring_sc_dequeue_bulk(r, v_mbufs, MAX_RING_BURST) < 0? 0 : MAX_RING_BURST;
 #else
+	return rte_ring_sc_dequeue_bulk(r, v_mbufs, MAX_RING_BURST, NULL);
+#endif
+#else
+#if RTE_VERSION < RTE_VERSION_NUM(17,5,0,1)
 	return rte_ring_sc_dequeue_burst(r, v_mbufs, MAX_RING_BURST);
+#else
+	return rte_ring_sc_dequeue_burst(r, v_mbufs, MAX_RING_BURST, NULL);
+#endif
 #endif
 }
 

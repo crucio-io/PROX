@@ -1,5 +1,6 @@
 ##
 # Copyright(c) 2010-2015 Intel Corporation.
+# Copyright(c) 2016-2017 Viosoft Corporation.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -85,7 +86,11 @@ ifeq ($(LD_LUA),)
 LD_LUA  = $(shell pkg-config --silence-errors --libs-only-l lua5.2)
 CFLAGS += $(shell pkg-config --silence-errors --cflags lua5.2)
 ifeq ($(LD_LUA),)
+LD_LUA  = $(shell pkg-config --silence-errors --libs-only-l lua5.3)
+CFLAGS += $(shell pkg-config --silence-errors --cflags lua5.3)
+ifeq ($(LD_LUA),)
 LD_LUA =-llua
+endif
 endif
 endif
 

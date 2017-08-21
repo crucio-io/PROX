@@ -1,5 +1,6 @@
 /*
-  Copyright(c) 2010-2016 Intel Corporation.
+  Copyright(c) 2010-2017 Intel Corporation.
+  Copyright(c) 2016-2017 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -65,6 +66,7 @@
 #include "version.h"
 #include "stats_latency.h"
 #include "handle_cgnat.h"
+#include "handle_impair.h"
 
 static int core_task_is_valid(int lcore_id, int task_id)
 {
@@ -148,12 +150,11 @@ static int parse_cmd_quit(const char *str, struct input *input)
 
 static int parse_cmd_quit_force(const char *str, struct input *input)
 {
-       if (strcmp(str, "") != 0) {
-               return -1;
-       }
+	if (strcmp(str, "") != 0) {
+		return -1;
+	}
 
-       exit(0);
-       return 0;
+	abort();
 }
 
 static int parse_cmd_history(const char *str, struct input *input)
@@ -330,6 +331,13 @@ int task_is_mode(uint32_t lcore_id, uint32_t task_id, const char *mode, const ch
 	return !strcmp(t->mode_str, mode) && !strcmp(t->sub_mode_str, sub_mode);
 }
 
+int task_is_sub_mode(uint32_t lcore_id, uint32_t task_id, const char *sub_mode)
+{
+	struct task_init *t = lcore_cfg[lcore_id].targs[task_id].task_init;
+
+	return !strcmp(t->sub_mode_str, sub_mode);
+}
+
 static void log_pkt_count(uint32_t count, uint32_t lcore_id, uint32_t task_id)
 {
 	if (count == UINT32_MAX)
@@ -368,6 +376,116 @@ static int parse_cmd_count(const char *str, struct input *input)
 	return 0;
 }
 
+static int parse_cmd_set_probability(const char *str, struct input *input)
+{
+	unsigned lcores[RTE_MAX_LCORE], lcore_id, task_id, nb_cores;
+	float probability;
+
+	if (parse_core_task(str, lcores, &task_id, &nb_cores))
+		return -1;
+	if (!(str = strchr_skip_twice(str, ' ')))
+		return -1;
+	if (sscanf(str, "%f", &probability) != 1)
+		return -1;
+
+	if (cores_task_are_valid(lcores, task_id, nb_cores)) {
+		for (unsigned int i = 0; i < nb_cores; i++) {
+			lcore_id = lcores[i];
+			if (!task_is_mode(lcore_id, task_id, "impair", "")) {
+				plog_err("Core %u task %u is not impairing packets\n", lcore_id, task_id);
+			}
+			struct task_base *tbase = lcore_cfg[lcore_id].tasks_all[task_id];
+			task_impair_set_proba(tbase, probability);
+		}
+	}
+	return 0;
+}
+
+static int parse_cmd_delay_us(const char *str, struct input *input)
+{
+	unsigned lcores[RTE_MAX_LCORE], lcore_id, task_id, delay_us, nb_cores;
+
+	if (parse_core_task(str, lcores, &task_id, &nb_cores))
+		return -1;
+	if (!(str = strchr_skip_twice(str, ' ')))
+		return -1;
+	if (sscanf(str, "%d", &delay_us) != 1)
+		return -1;
+
+	if (cores_task_are_valid(lcores, task_id, nb_cores)) {
+		for (unsigned int i = 0; i < nb_cores; i++) {
+			lcore_id = lcores[i];
+			if (!task_is_mode(lcore_id, task_id, "impair", "")) {
+				plog_err("Core %u task %u is not impairing packets\n", lcore_id, task_id);
+			}
+			struct task_base *tbase = lcore_cfg[lcore_id].tasks_all[task_id];
+			task_impair_set_delay_us(tbase, delay_us, 0);
+		}
+	}
+	return 0;
+}
+
+static int parse_cmd_random_delay_us(const char *str, struct input *input)
+{
+	unsigned lcores[RTE_MAX_LCORE], lcore_id, task_id, delay_us, nb_cores;
+
+	if (parse_core_task(str, lcores, &task_id, &nb_cores))
+		return -1;
+	if (!(str = strchr_skip_twice(str, ' ')))
+		return -1;
+	if (sscanf(str, "%d", &delay_us) != 1)
+		return -1;
+
+	if (cores_task_are_valid(lcores, task_id, nb_cores)) {
+		for (unsigned int i = 0; i < nb_cores; i++) {
+			lcore_id = lcores[i];
+			if (!task_is_mode(lcore_id, task_id, "impair", "")) {
+				plog_err("Core %u task %u is not impairing packets\n", lcore_id, task_id);
+			}
+			struct task_base *tbase = lcore_cfg[lcore_id].tasks_all[task_id];
+			task_impair_set_delay_us(tbase, 0, delay_us);
+		}
+	}
+	return 0;
+}
+
+static int parse_cmd_bypass(const char *str, struct input *input)
+{
+	unsigned lcores[RTE_MAX_LCORE], lcore_id, task_id, pkt_size, nb_cores;
+
+	if (parse_core_task(str, lcores, &task_id, &nb_cores))
+		return -1;
+	if ((prox_cfg.flags & DSF_ENABLE_BYPASS) == 0) {
+		plog_err("enable bypass not set => command not supported\n");
+		return -1;
+	}
+
+	if (cores_task_are_valid(lcores, task_id, nb_cores)) {
+		for (unsigned int i = 0; i < nb_cores; i++) {
+			lcore_id = lcores[i];
+			if (bypass_task(lcore_id, task_id) != 0)
+				return -1;
+		}
+	}
+	return 0;
+}
+
+static int parse_cmd_reconnect(const char *str, struct input *input)
+{
+	unsigned lcores[RTE_MAX_LCORE], lcore_id, task_id, pkt_size, nb_cores;
+
+	if (parse_core_task(str, lcores, &task_id, &nb_cores))
+		return -1;
+	if (cores_task_are_valid(lcores, task_id, nb_cores)) {
+		for (unsigned int i = 0; i < nb_cores; i++) {
+			lcore_id = lcores[i];
+			if (reconnect_task(lcore_id, task_id) != 0)
+				return -1;
+		}
+	}
+	return 0;
+}
+
 static int parse_cmd_pkt_size(const char *str, struct input *input)
 {
 	unsigned lcores[RTE_MAX_LCORE], lcore_id, task_id, pkt_size, nb_cores;
@@ -387,7 +505,8 @@ static int parse_cmd_pkt_size(const char *str, struct input *input)
 			}
 			struct task_base *tbase = lcore_cfg[lcore_id].tasks_all[task_id];
 
-			task_gen_set_pkt_size(tbase, pkt_size);
+			if (task_gen_set_pkt_size(tbase, pkt_size) != 0)
+				return -1;
 		}
 	}
 	return 0;
@@ -473,7 +592,7 @@ static int parse_cmd_reset_randoms_all(const char *str, struct input *input)
 	unsigned task_id, lcore_id = -1;
 	while (prox_core_next(&lcore_id, 0) == 0) {
 		for (task_id = 0; task_id < lcore_cfg[lcore_id].n_tasks_all; task_id++) {
-			if ((!task_is_mode(lcore_id, task_id, "gen", "")) && (!task_is_mode(lcore_id, task_id, "gen", "l3"))) {
+			if ((task_is_mode(lcore_id, task_id, "gen", "")) || (task_is_mode(lcore_id, task_id, "gen", "l3"))) {
 				struct task_base *tbase = lcore_cfg[lcore_id].tasks_all[task_id];
 				uint32_t n_rands = task_gen_get_n_randoms(tbase);
 
@@ -494,7 +613,7 @@ static int parse_cmd_reset_values_all(const char *str, struct input *input)
 	unsigned task_id, lcore_id = -1;
 	while (prox_core_next(&lcore_id, 0) == 0) {
 		for (task_id = 0; task_id < lcore_cfg[lcore_id].n_tasks_all; task_id++) {
-			if ((!task_is_mode(lcore_id, task_id, "gen", "")) && (!task_is_mode(lcore_id, task_id, "gen", "l3"))) {
+			if ((task_is_mode(lcore_id, task_id, "gen", "")) || (task_is_mode(lcore_id, task_id, "gen", "l3"))) {
 				struct task_base *tbase = lcore_cfg[lcore_id].tasks_all[task_id];
 
 				plog_info("Resetting values on core %d task %d\n", lcore_id, task_id);
@@ -655,7 +774,11 @@ static int parse_cmd_arp_add(const char *str, struct input *input)
 					plog_err("No ring for control messages to core %u task %u\n", lcore_id, task_id);
 				}
 				else {
+#if RTE_VERSION < RTE_VERSION_NUM(17,5,0,1)
 					while (rte_ring_sp_enqueue_bulk(ring, (void *const *)&pmsg, 1));
+#else
+					while (rte_ring_sp_enqueue_bulk(ring, (void *const *)&pmsg, 1, NULL) == 0);
+#endif
 					while (!rte_ring_empty(ring));
 				}
 			}
@@ -696,7 +819,11 @@ static int parse_cmd_rule_add(const char *str, struct input *input)
 					plog_err("No ring for control messages to core %u task %u\n", lcore_id, task_id);
 				}
 				else {
+#if RTE_VERSION < RTE_VERSION_NUM(17,5,0,1)
 					while (rte_ring_sp_enqueue_bulk(ring, (void *const *)&prule, 1));
+#else
+					while (rte_ring_sp_enqueue_bulk(ring, (void *const *)&prule, 1, NULL) == 0);
+#endif
 					while (!rte_ring_empty(ring));
 				}
 			}
@@ -795,7 +922,11 @@ static int parse_cmd_route_add(const char *str, struct input *input)
 				rmsg.ip_bytes[3] = ip[3];
 				rmsg.prefix = prefix;
 				rmsg.nh = next_hop_idx;
+#if RTE_VERSION < RTE_VERSION_NUM(17,5,0,1)
 				while (rte_ring_sp_enqueue_bulk(ring, (void *const *)&pmsg, 1));
+#else
+				while (rte_ring_sp_enqueue_bulk(ring, (void *const *)&pmsg, 1, NULL) == 0);
+#endif
 				while (!rte_ring_empty(ring));
 			}
 		}
@@ -1735,6 +1866,8 @@ static struct cmd_str cmd_strings[] = {
 
 	{"rate", "<port id> <queue id> <rate>", "rate does not include preamble, SFD and IFG", parse_cmd_rate},
 	{"count","<core id> <task id> <count>", "Generate <count> packets", parse_cmd_count},
+	{"bypass", "<core_id> <task_id>", "Bypass task", parse_cmd_bypass},
+	{"reconnect", "<core_id> <task_id>", "Reconnect task", parse_cmd_reconnect},
 	{"pkt_size", "<core_id> <task_id> <pkt_size>", "Set the packet size to <pkt_size>", parse_cmd_pkt_size},
 	{"speed", "<core_id> <task_id> <speed percentage>", "Change the speed to <speed percentage> at which packets are being generated on core <core_id> in task <task_id>.", parse_cmd_speed},
 	{"speed_byte", "<core_id> <task_id> <speed>", "Change speed to <speed>. The speed is specified in units of bytes per second.", parse_cmd_speed_byte},
@@ -1783,6 +1916,9 @@ static struct cmd_str cmd_strings[] = {
 	{"stats", "<stats_path>", "Get stats as sepcified by <stats_path>. A comma-separated list of <stats_path> can be supplied", parse_cmd_stats},
 	{"cgnat dump public hash", "<core id> <task id>", "Dump cgnat public hash table", parse_cmd_cgnat_public_hash},
 	{"cgnat dump private hash", "<core id> <task id>", "Dump cgnat private hash table", parse_cmd_cgnat_private_hash},
+	{"delay_us", "<core_id> <task_id> <delay_us>", "Set the delay in usec for the impair mode to <delay_us>", parse_cmd_delay_us},
+	{"random delay_us", "<core_id> <task_id> <random delay_us>", "Set the delay in usec for the impair mode to <random delay_us>", parse_cmd_random_delay_us},
+	{"probability", "<core_id> <task_id> <probability>", "Set the percent of forwarded packets for the impair mode", parse_cmd_set_probability},
 	{"version", "", "Show version", parse_cmd_version},
 	{0,0,0,0},
 };

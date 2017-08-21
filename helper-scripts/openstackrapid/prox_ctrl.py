@@ -1,4 +1,6 @@
-# Copyright(c) 2010-2017 Intel Corporation.
+##
+# Copyright(c) 2010-2015 Intel Corporation.
+# Copyright(c) 2016-2017 Viosoft Corporation.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -26,6 +28,9 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+##
+
+from __future__ import print_function
 
 import os
 import subprocess
@@ -57,25 +62,25 @@ class prox_ctrl(object):
         if children == 0:
             return
         if children > 1:
-            print 'Waiting for %d child processes to complete ...' % children
+            print('Waiting for %d child processes to complete ...' % children)
         for child in self._children:
             ret = os.waitpid(child[0], os.WNOHANG)
             if ret[0] == 0:
-                print "Waiting for child process '%s' to complete ..." % child[1]
+                print("Waiting for child process '%s' to complete ..." % child[1])
                 ret = os.waitpid(child[0], 0)
             rc = ret[1]
             if os.WIFEXITED(rc):
                 if os.WEXITSTATUS(rc) == 0:
-                    print "Child process '%s' completed successfully" % child[1]
+                    print("Child process '%s' completed successfully" % child[1])
                 else:
-                    print "Child process '%s' returned exit status %d" % (
-                            child[1], os.WEXITSTATUS(rc))
+                    print("Child process '%s' returned exit status %d" % (
+                            child[1], os.WEXITSTATUS(rc)))
             elif os.WIFSIGNALED(rc):
-                print "Child process '%s' exited on signal %d" % (
-                        child[1], os.WTERMSIG(rc))
+                print("Child process '%s' exited on signal %d" % (
+                        child[1], os.WTERMSIG(rc)))
             else:
-                print "Wait status for child process '%s' is 0x%04x" % (
-                        child[1], rc)
+                print("Wait status for child process '%s' is 0x%04x" % (
+                        child[1], rc))
 
     def run_cmd(self, command, _connect=False):
         """Execute command over ssh on remote system.
@@ -86,7 +91,7 @@ class prox_ctrl(object):
         cmd = self._build_ssh(command)
         try:
             return subprocess.check_output(cmd, stderr=subprocess.STDOUT)
-        except subprocess.CalledProcessError, ex:
+        except subprocess.CalledProcessError as ex:
             if _connect and ex.returncode == 255:
                 raise RuntimeWarning(ex.output.strip())
             raise RuntimeError('ssh returned exit status %d:\n%s'
@@ -109,7 +114,7 @@ class prox_ctrl(object):
         try:
             # Actually ignore output on success, but capture stderr on failure
             subprocess.check_output(cmd, stderr=subprocess.STDOUT)
-        except subprocess.CalledProcessError, ex:
+        except subprocess.CalledProcessError as ex:
             raise RuntimeError("Child process '%s' failed:\n"
                     'ssh returned exit status %d:\n%s'
                     % (name, ex.returncode, ex.output.strip()))
@@ -146,7 +151,7 @@ class prox_ctrl(object):
         try:
             # Actually ignore output on success, but capture stderr on failure
             subprocess.check_output(cmd, stderr=subprocess.STDOUT)
-        except subprocess.CalledProcessError, ex:
+        except subprocess.CalledProcessError as ex:
             raise RuntimeError('scp returned exit status %d:\n%s'
                     % (ex.returncode, ex.output.strip()))
 
@@ -169,7 +174,7 @@ class prox_ctrl(object):
 class prox_sock(object):
     def __init__(self, sock):
         self._sock = sock
-        self._rcvd = ''
+        self._rcvd = b''
 
     def quit(self):
         if self._sock is not None:
@@ -213,17 +218,17 @@ class prox_sock(object):
         """Append LF and send command to the PROX instance."""
         if self._sock is None:
             raise RuntimeError("PROX socket closed, cannot send '%s'" % cmd)
-        self._sock.sendall(cmd + '\n')
+        self._sock.sendall(cmd.encode() + b'\n')
 
     def _recv(self):
         """Receive response from PROX instance, and return it with LF removed."""
         if self._sock is None:
             raise RuntimeError("PROX socket closed, cannot receive anymore")
-        pos = self._rcvd.find('\n')
+        pos = self._rcvd.find(b'\n')
         while pos == -1:
             self._rcvd += self._sock.recv(256)
-            pos = self._rcvd.find('\n')
+            pos = self._rcvd.find(b'\n')
         rsp = self._rcvd[:pos]
         self._rcvd = self._rcvd[pos+1:]
-        return rsp
+        return rsp.decode()
 

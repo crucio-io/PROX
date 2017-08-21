@@ -1,5 +1,6 @@
 /*
-  Copyright(c) 2010-2016 Intel Corporation.
+  Copyright(c) 2010-2017 Intel Corporation.
+  Copyright(c) 2016-2017 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -60,6 +61,7 @@ struct lcore_cfg;
 #define TASK_ARG_SRC_MAC_SET	0x100
 #define	TASK_ARG_DO_NOT_SET_SRC_MAC 0x200
 #define	TASK_ARG_DO_NOT_SET_DST_MAC 0x400
+#define	TASK_ARG_HW_SRC_MAC 	0x800
 
 enum protocols {IPV4, ARP, IPV6};
 
@@ -138,6 +140,7 @@ struct task_args {
 	uint8_t                nb_rxports;
 	uint32_t               byte_offset;
 	uint32_t               gateway_ipv4;
+	uint32_t               number_gen_ip;
 	uint32_t               local_ipv4;
 	struct ipv6_addr       local_ipv6;    /* For IPv6 Tunnel, it's the local tunnel endpoint address */
 	struct rte_ring        *rx_rings[MAX_RINGS_PER_TASK];
@@ -195,6 +198,8 @@ struct task_args {
 	uint32_t               rand_offset[64];
 	char                   pcap_file[256];
 	uint32_t               accur_pos;
+	uint32_t               sig_pos;
+	uint32_t               sig;
 	uint32_t               lat_pos;
 	uint32_t               packet_id_pos;
 	uint32_t               latency_buffer_size;

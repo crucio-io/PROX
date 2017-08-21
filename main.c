@@ -1,5 +1,6 @@
 /*
-  Copyright(c) 2010-2016 Intel Corporation.
+  Copyright(c) 2010-2017 Intel Corporation.
+  Copyright(c) 2016-2017 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -71,15 +72,16 @@ struct rte_ring *ctrl_rings[RTE_MAX_LCORE*MAX_TASKS_PER_CORE];
 
 static void __attribute__((noreturn)) prox_usage(const char *prgname)
 {
-	plog_info("\nUsage: %s [-f CONFIG_FILE] [-a|-e] [-s|-i] [-w DEF] [-u] [-t]\n"
+	plog_info("\nUsage: %s [-f CONFIG_FILE] [-a|-e] [-m|-s|-i] [-w DEF] [-u] [-t]\n"
 		  "\t-f CONFIG_FILE : configuration file to load, ./prox.cfg by default\n"
 		  "\t-l LOG_FILE : log file name, ./prox.log by default\n"
 		  "\t-p : include PID in log file name if default log file is used\n"
 		  "\t-o DISPLAY: Set display to use, can be 'curses' (default), 'cli' or 'none'\n"
-		  "\t-a : autostart all cores (by default)\n"
 		  "\t-v verbosity : initial logging verbosity\n"
+		  "\t-a : autostart all cores (by default)\n"
 		  "\t-e : don't autostart\n"
 		  "\t-n : Create NULL devices instead of using PCI devices, useful together with -i\n"
+		  "\t-m : list supported task modes and exit\n"
 		  "\t-s : check configuration file syntax and exit\n"
 		  "\t-i : check initialization sequence and exit\n"
 		  "\t-u : Listen on UDS /tmp/prox.sock\n"
@@ -200,7 +202,7 @@ static void configure_if_tx_queues(struct task_args *targ, uint8_t socket)
 		   the tasks up to the task transmitting to the port
 		   does not use refcnt. */
 		if (!chain_flag_state(targ, TASK_FEATURE_TXQ_FLAGS_REFCOUNT, 1)) {
-			prox_port_cfg[if_port].tx_conf.txq_flags = ETH_TXQ_FLAGS_NOREFCOUNT;
+			prox_port_cfg[if_port].tx_conf.txq_flags |= ETH_TXQ_FLAGS_NOREFCOUNT;
 			plog_info("\t\tEnabling No refcnt on port %d\n", if_port);
 		}
 		else {
@@ -425,7 +427,8 @@ static void init_ring_between_tasks(struct lcore_cfg *lconf, struct task_args *s
 	int ring_created = 1;
 	/* Only create multi-producer rings if configured to do so AND
 	   there is only one task sending to the task */
-	if (prox_cfg.flags & DSF_MP_RINGS && count_incoming_tasks(ct.core, ct.task) > 1) {
+	if ((prox_cfg.flags & DSF_MP_RINGS && count_incoming_tasks(ct.core, ct.task) > 1)
+		|| (prox_cfg.flags & DSF_ENABLE_BYPASS)) {
 		ring = get_existing_ring(ct.core, ct.task);
 
 		if (ring) {
@@ -525,6 +528,7 @@ static void setup_mempools_unique_per_socket(void)
 	uint32_t mbuf_size[MAX_SOCKETS] = {0};
 
 	while (core_targ_next_early(&lconf, &targ, 0) == 0) {
+		PROX_PANIC(targ->task_init == NULL, "task_init = NULL, is mode specified for core %d, task %d ?\n", lconf->id, targ->id);
 		uint8_t socket = rte_lcore_to_socket_id(lconf->id);
 		PROX_ASSERT(socket < MAX_SOCKETS);
 
@@ -683,6 +687,7 @@ static void setup_mempools_multiple_per_socket(void)
 	struct task_args *targ;
 
 	while (core_targ_next_early(&lconf, &targ, 0) == 0) {
+		PROX_PANIC(targ->task_init == NULL, "task_init = NULL, is mode specified for core %d, task %d ?\n", lconf->id, targ->id);
 		if (targ->rx_port_queue[0].port == OUT_DISCARD)
 			continue;
 		setup_mempool_for_rx_task(lconf, targ);
@@ -862,6 +867,66 @@ static void siguser_handler(int signal)
 		success = 0;
 }
 
+static void sigabrt_handler(__attribute__((unused)) int signum)
+{
+	/* restore default disposition for SIGABRT and SIGPIPE */
+	signal(SIGABRT, SIG_DFL);
+	signal(SIGPIPE, SIG_DFL);
+
+	/* ignore further Ctrl-C */
+	signal(SIGINT, SIG_IGN);
+
+	/* more drastic exit on tedious termination signal */
+	plog_info("Aborting...\n");
+	if (lcore_cfg != NULL) {
+		uint32_t lcore_id;
+		pthread_t thread_id, tid0, tid = pthread_self();
+		memset(&tid0, 0, sizeof(tid0));
+
+		/* cancel all threads except current one */
+		lcore_id = -1;
+		while (prox_core_next(&lcore_id, 1) == 0) {
+			thread_id = lcore_cfg[lcore_id].thread_id;
+			if (pthread_equal(thread_id, tid0))
+				continue;
+			if (pthread_equal(thread_id, tid))
+				continue;
+			pthread_cancel(thread_id);
+		}
+
+		/* wait for cancelled threads to terminate */
+		lcore_id = -1;
+		while (prox_core_next(&lcore_id, 1) == 0) {
+			thread_id = lcore_cfg[lcore_id].thread_id;
+			if (pthread_equal(thread_id, tid0))
+				continue;
+			if (pthread_equal(thread_id, tid))
+				continue;
+			pthread_join(thread_id, NULL);
+		}
+	}
+
+	/* close ncurses */
+	display_end();
+
+	/* close ports on termination signal */
+	close_ports_atexit();
+
+	/* terminate now */
+	abort();
+}
+
+static void sigterm_handler(int signum)
+{
+	/* abort on second Ctrl-C */
+	if (signum == SIGINT)
+		signal(SIGINT, sigabrt_handler);
+
+	/* gracefully quit on harmless termination signal */
+	/* ports will subsequently get closed at resulting exit */
+	quit();
+}
+
 int main(int argc, char **argv)
 {
 	/* set en_US locale to print big numbers with ',' */
@@ -875,6 +940,25 @@ int main(int argc, char **argv)
 	plog_info("=== " PROGRAM_NAME " " VERSION_STR " ===\n");
 	plog_info("\tUsing DPDK %s\n", rte_version() + sizeof(RTE_VER_PREFIX));
 	read_rdt_info();
+
+	if (prox_cfg.flags & DSF_LIST_TASK_MODES) {
+		/* list supported task modes and exit */
+		tasks_list();
+		return EXIT_SUCCESS;
+	}
+
+	/* close ports at normal exit */
+	atexit(close_ports_atexit);
+	/* gracefully quit on harmless termination signals */
+	signal(SIGHUP, sigterm_handler);
+	signal(SIGINT, sigterm_handler);
+	signal(SIGQUIT, sigterm_handler);
+	signal(SIGTERM, sigterm_handler);
+	signal(SIGUSR1, sigterm_handler);
+	signal(SIGUSR2, sigterm_handler);
+	/* more drastic exit on tedious termination signals */
+	signal(SIGABRT, sigabrt_handler);
+	signal(SIGPIPE, sigabrt_handler);
 
 	if (prox_cfg.flags & DSF_DAEMON) {
 		signal(SIGUSR1, siguser_handler);

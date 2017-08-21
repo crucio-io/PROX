@@ -1,5 +1,6 @@
 /*
-  Copyright(c) 2010-2016 Intel Corporation.
+  Copyright(c) 2010-2017 Intel Corporation.
+  Copyright(c) 2016-2017 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -86,6 +87,7 @@ void init_rte_dev(int use_dummy_devices);
 uint8_t init_rte_ring_dev(void);
 void init_port_addr(void);
 void init_port_all(void);
+void close_ports_atexit(void);
 
 struct rte_mempool;
 

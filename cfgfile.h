@@ -1,5 +1,6 @@
 /*
-  Copyright(c) 2010-2016 Intel Corporation.
+  Copyright(c) 2010-2017 Intel Corporation.
+  Copyright(c) 2016-2017 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -40,7 +41,7 @@
 typedef int (*cfg_parser)(unsigned sindex, char *str, void *data);
 
 #define CFG_INDEXED	0x80000000	/* section contains index [name #] */
-#define MAX_INDEX	32
+#define MAX_INDEX	64
 
 struct cfg_section {
 	const char	*name;	/* section name without [] */

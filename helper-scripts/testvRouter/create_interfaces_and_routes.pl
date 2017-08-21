@@ -1,6 +1,8 @@
 #!/bin/env perl
-#
-# Copyright(c) 2010-2016 Intel Corporation.
+
+##
+# Copyright(c) 2010-2015 Intel Corporation.
+# Copyright(c) 2016-2017 Viosoft Corporation.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without

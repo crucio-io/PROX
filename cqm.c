@@ -1,5 +1,6 @@
 /*
-  Copyright(c) 2010-2016 Intel Corporation.
+  Copyright(c) 2010-2017 Intel Corporation.
+  Copyright(c) 2016-2017 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -79,14 +80,14 @@ void read_rdt_info(void)
 		plog_info("\tRDT-M. Supports Intel RDT Monitoring capability\n");
 		rdt_features.rdtm_supported = 1;
 	} else {
-		plog_info("\tDoes not supports Intel RDT Monitoring capability\n");
+		plog_info("\tDoes not support Intel RDT Monitoring capability\n");
 		return;
 	}
 	if ((r.ebx >> 15) & 1) {
 		plog_info("\tRDT-A. Supports Intel RDT Allocation capability\n");
 		rdt_features.rdta_supported = 1;
 	} else {
-		plog_info("\tDoes not upports Intel RDT Allocation capability\n");
+		plog_info("\tDoes not support Intel RDT Allocation capability\n");
 	}
 
 	cpuid(&r, 0xf, 0x0, 0x0, 0x0);
@@ -157,7 +158,7 @@ int mba_is_supported(void)
 
 int cmt_is_supported(void)
 {
-	if (prox_cfg.flags & DSF_DISABLE_CMT) {
+	if ((rdt_features.rdtm_supported || rdt_features.rdta_supported) && (prox_cfg.flags & DSF_DISABLE_CMT)) {
 		rdt_features.rdtm_supported = rdt_features.rdta_supported  = 0;
 		plog_info("cqm and cat features disabled by config file\n");
 	}
@@ -166,7 +167,7 @@ int cmt_is_supported(void)
 
 int cat_is_supported(void)
 {
-	if (prox_cfg.flags & DSF_DISABLE_CMT) {
+	if ((rdt_features.rdtm_supported || rdt_features.rdta_supported) && (prox_cfg.flags & DSF_DISABLE_CMT)) {
 		rdt_features.rdtm_supported = rdt_features.rdta_supported  = 0;
 		plog_info("cqm and cat features disabled by config file\n");
 	}
@@ -300,7 +301,7 @@ int cat_get_class_mask(uint8_t lcore_id, uint32_t set, uint32_t *mask)
 	int rc;
 	rc = msr_read(&tmp_rmid,lcore_id,IA32_QM_L3CA_START + set);
 	if (rc < 0) {
-		plog_err("Failed to write Cache allocation\n");
+		plog_err("Failed to read Cache allocation\n");
 		return -1;
 	}
 	*mask = tmp_rmid & 0xffffffff;
@@ -314,7 +315,7 @@ void cat_reset_cache(uint32_t lcore_id)
 	for (uint32_t set = 0; set <= rdt_features.cat_max_rmid; set++) {
 		rc = msr_write(lcore_id, mask, IA32_QM_L3CA_START + set);
 		if (rc < 0) {
-			plog_err("Failed to write Cache allocation\n");
+			plog_err("Failed to reset Cache allocation\n");
 		}
 	}
 }

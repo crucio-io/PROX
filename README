@@ -1,5 +1,6 @@
 ##
-# Copyright(c) 2010-2017 Intel Corporation.
+# Copyright(c) 2010-2015 Intel Corporation.
+# Copyright(c) 2016-2017 Viosoft Corporation.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -39,17 +40,17 @@ finer grained network functions like QoS, Routing, load-balancing...
 
 Compiling and running this application
 --------------------------------------
-This application supports DPDK 17.02. The following commands assume that
-the following variables have been set:
+This application supports DPDK 16.04, 16.11, 16.11.1, 17.02 and 17.05.
+The following commands assume that the following variables have been set:
 
 export RTE_SDK=/path/to/dpdk
 export RTE_TARGET=x86_64-native-linuxapp-gcc
 
-DPDK 17.02 installation
------------------------
+Example: DPDK 17.05 installation
+--------------------------------
 git clone http://dpdk.org/git/dpdk
 cd dpdk
-git checkout v17.02
+git checkout v17.05
 make install T=$RTE_TARGET
 
 PROX compilation
@@ -67,18 +68,29 @@ below. Note that this application assumes that all required ports have
 been bound to the DPDK provided igb_uio driver. Refer to the "Getting
 Started Guide - DPDK" document for more details.
 
-Usage: ./build/prox [-f CONFIG_FILE] [-a|-e] [-s|-i] [-w DEF] [-u] [-t]
-	-f CONFIG_FILE : configuration file to load, ./prox.cfg by default
-	-l LOG_FILE : log file name, ./prox.log by default
-	-p : include PID in log file name if default log file is used
-	-a : autostart all cores (by default)
-	-e : don't autostart
-	-s : check configuration file syntax and exit
-	-i : check initialization sequence and exit
-	-u : Listen on UDS /tmp/prox.sock
-	-t : Listen on TCP port 8474
-	-w : define variable using syntax varname=value
-	     takes precedence over variables defined in CONFIG_FILE
+Usage: ./build/prox [-f CONFIG_FILE] [-l LOG_FILE] [-p] [-o DISPLAY] [-v] [-a|-e] \
+		[-m|-s|-i] [-n] [-w DEF] [-q] [-k] [-d] [-z] [-r VAL] [-u] [-t]
+        -f CONFIG_FILE : configuration file to load, ./prox.cfg by default
+        -l LOG_FILE : log file name, ./prox.log by default
+        -p : include PID in log file name if default log file is used
+        -o DISPLAY: Set display to use, can be 'curses' (default), 'cli' or 'none'
+        -v verbosity : initial logging verbosity
+        -a : autostart all cores (by default)
+        -e : don't autostart
+        -n : Create NULL devices instead of using PCI devices, useful together with -i
+        -m : list supported task modes and exit
+        -s : check configuration file syntax and exit
+        -i : check initialization sequence and exit
+        -u : Listen on UDS /tmp/prox.sock
+        -t : Listen on TCP port 8474
+        -q : Pass argument to Lua interpreter, useful to define variables
+        -w : define variable using syntax varname=value
+             takes precedence over variables defined in CONFIG_FILE
+        -k : Log statistics to file "stats_dump" in current directory
+        -d : Run as daemon, the parent process will block until PROX is not initialized
+        -z : Ignore CPU topology, implies -i
+        -r : Change initial screen refresh rate. If set to a lower than 0.001 seconds,
+                  screen refreshing will be disabled
 
 While applications using DPDK typically rely on the core mask and the
 number of channels to be specified on the command line, this

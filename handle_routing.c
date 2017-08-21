@@ -1,5 +1,6 @@
 /*
-  Copyright(c) 2010-2016 Intel Corporation.
+  Copyright(c) 2010-2017 Intel Corporation.
+  Copyright(c) 2016-2017 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -131,18 +132,27 @@ static void init_task_routing(struct task_base *tbase, struct task_args *targ)
 		}
 	}
 
-	struct task_args *dtarg;
-	struct core_task ct;
-	for (uint32_t i = 0; i < targ->nb_txrings || i < targ->nb_txports; ++i) {
-		ct = targ->core_task_set[0].core_task[i];
-		dtarg = core_targ_get(ct.core, ct.task);
-		dtarg = find_reachable_task_sending_to_port(dtarg);
-		if (task->runtime_flags & TASK_MPLS_TAGGING) {
-			task->src_mac[i] = (0x0000ffffffffffff & ((*(uint64_t*)&prox_port_cfg[dtarg->tx_port_queue[0].port].eth_addr))) | ((uint64_t)ETYPE_MPLSU << (64 - 16));
+        if (targ->nb_txrings) {
+		struct task_args *dtarg;
+		struct core_task ct;
+		for (uint32_t i = 0; i < targ->nb_txrings; ++i) {
+			ct = targ->core_task_set[0].core_task[i];
+			dtarg = core_targ_get(ct.core, ct.task);
+			dtarg = find_reachable_task_sending_to_port(dtarg);
+			if (task->runtime_flags & TASK_MPLS_TAGGING) {
+				task->src_mac[i] = (0x0000ffffffffffff & ((*(uint64_t*)&prox_port_cfg[dtarg->tx_port_queue[0].port].eth_addr))) | ((uint64_t)ETYPE_MPLSU << (64 - 16));
+			} else {
+				task->src_mac[i] = (0x0000ffffffffffff & ((*(uint64_t*)&prox_port_cfg[dtarg->tx_port_queue[0].port].eth_addr))) | ((uint64_t)ETYPE_IPv4 << (64 - 16));
+			}
 		}
-		else {
-			task->src_mac[i] = (0x0000ffffffffffff & ((*(uint64_t*)&prox_port_cfg[dtarg->tx_port_queue[0].port].eth_addr))) | ((uint64_t)ETYPE_IPv4 << (64 - 16));
-		}
+	} else {
+		for (uint32_t i = 0; i < targ->nb_txports; ++i) {
+			if (task->runtime_flags & TASK_MPLS_TAGGING) {
+				task->src_mac[i] = (0x0000ffffffffffff & ((*(uint64_t*)&prox_port_cfg[targ->tx_port_queue[i].port].eth_addr))) | ((uint64_t)ETYPE_MPLSU << (64 - 16));
+			} else {
+				task->src_mac[i] = (0x0000ffffffffffff & ((*(uint64_t*)&prox_port_cfg[targ->tx_port_queue[i].port].eth_addr))) | ((uint64_t)ETYPE_IPv4 << (64 - 16));
+                	}
+                }
 	}
 
 	for (uint32_t i = 0; i < 4; ++i) {

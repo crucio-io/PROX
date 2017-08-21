@@ -1,5 +1,6 @@
 /*
-  Copyright(c) 2010-2016 Intel Corporation.
+  Copyright(c) 2010-2017 Intel Corporation.
+  Copyright(c) 2016-2017 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -111,6 +112,8 @@ struct task_lat {
 	uint16_t lat_pos;
 	uint16_t unique_id_pos;
 	uint16_t accur_pos;
+	uint16_t sig_pos;
+	uint32_t sig;
 	volatile uint16_t use_lt; /* which lt to use, */
 	volatile uint16_t using_lt; /* 0 or 1 depending on which of the 2 measurements are used */
 	struct lat_test lt[2];
@@ -448,6 +451,8 @@ static int task_lat_can_store_latency(struct task_lat *task)
 
 static void task_lat_store_lat(struct task_lat *task, uint64_t rx_packet_index, uint64_t rx_time, uint64_t tx_time, uint64_t rx_error, uint64_t tx_error, struct unique_id *unique_id)
 {
+	if (tx_time == 0)
+		return;
 	uint32_t lat_tsc = abs_diff(rx_time, tx_time) << LATENCY_ACCURACY;
 
 	lat_test_add_latency(task->lat_test, lat_tsc, rx_error + tx_error);
@@ -482,7 +487,19 @@ static int handle_lat_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uin
 		task->rx_pkt_meta[j].hdr = rte_pktmbuf_mtod(mbuf, uint8_t *);
 	}
 	for (uint16_t j = 0; j < n_pkts; ++j) {
-		task->rx_pkt_meta[j].pkt_tx_time = *(uint32_t *)(task->rx_pkt_meta[j].hdr + task->lat_pos);
+	}
+
+	if (task->sig) {
+		for (uint16_t j = 0; j < n_pkts; ++j) {
+			if (*(uint32_t *)(task->rx_pkt_meta[j].hdr + task->sig_pos) == task->sig)
+				task->rx_pkt_meta[j].pkt_tx_time = *(uint32_t *)(task->rx_pkt_meta[j].hdr + task->lat_pos);
+			else
+				task->rx_pkt_meta[j].pkt_tx_time = 0;
+		}
+	} else {
+		for (uint16_t j = 0; j < n_pkts; ++j) {
+			task->rx_pkt_meta[j].pkt_tx_time = *(uint32_t *)(task->rx_pkt_meta[j].hdr + task->lat_pos);
+		}
 	}
 
 	uint32_t bytes_total_in_bulk = 0;

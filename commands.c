@@ -1,5 +1,6 @@
 /*
-  Copyright(c) 2010-2016 Intel Corporation.
+  Copyright(c) 2010-2017 Intel Corporation.
+  Copyright(c) 2016-2017 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -554,7 +555,9 @@ void cmd_tx_distr_show(uint32_t lcore_id)
 				tot += t->aux->tx_bucket[j];
 				avg += j * t->aux->tx_bucket[j];
 			}
-			avg = avg / tot;
+			if (tot) {
+				avg = avg / tot;
+			}
 			plog_info("t[%u]: %lu: ", i, avg);
 			for (uint32_t j = 0; j < sizeof(t->aux->tx_bucket)/sizeof(t->aux->tx_bucket[0]); ++j) {
 				plog_info("%u ", t->aux->tx_bucket[j]);
@@ -598,7 +601,11 @@ void cmd_ringinfo(uint8_t lcore_id, uint8_t task_id)
 	plog_info("Core %u task %u: %u rings\n", lcore_id, task_id, targ->nb_rxrings);
 	for (uint8_t i = 0; i < targ->nb_rxrings; ++i) {
 		ring = targ->rx_rings[i];
+#if RTE_VERSION < RTE_VERSION_NUM(17,5,0,1)
 		count = ring->prod.mask + 1;
+#else
+		count = ring->mask + 1;
+#endif
 		plog_info("\tRing %u:\n", i);
 		plog_info("\t\tFlags: %s,%s\n", ring->flags & RING_F_SP_ENQ? "sp":"mp", ring->flags & RING_F_SC_DEQ? "sc":"mc");
 		plog_info("\t\tMemory size: %zu bytes\n", rte_ring_get_memsize(count));
@@ -948,4 +955,78 @@ void cmd_cache_reset(void)
 			cat_reset_cache(cores[s]);
 	}
 	stats_lcore_assoc_rmid();
+}
+
+int bypass_task(uint32_t lcore_id, uint32_t task_id)
+{
+	struct lcore_cfg *lconf = &lcore_cfg[lcore_id];
+	struct task_args *targ, *starg, *dtarg;
+	struct rte_ring *ring = NULL;
+
+	if (task_id >= lconf->n_tasks_all)
+		return -1;
+
+	targ = &lconf->targs[task_id];
+	if (targ->nb_txrings == 1) {
+		plog_info("Task has %d receive and 1 transmmit ring and can be bypassed, %d precedent tasks\n", targ->nb_rxrings, targ->n_prev_tasks);
+		// Find source task
+		for (unsigned int i = 0; i < targ->n_prev_tasks; i++) {
+			starg = targ->prev_tasks[i];
+			for (unsigned int j = 0; j < starg->nb_txrings; j++) {
+				for (unsigned int k = 0; k < targ->nb_rxrings; k++) {
+					if (starg->tx_rings[j] == targ->rx_rings[k]) {
+						plog_info("bypassing ring %p and connecting it to %p\n", starg->tx_rings[j], targ->tx_rings[0]);
+						starg->tx_rings[j] = targ->tx_rings[0];
+						struct task_base *tbase = starg->tbase;
+						tbase->tx_params_sw.tx_rings[j] = starg->tx_rings[j];
+					}
+				}
+			}
+		}
+	} else {
+		plog_info("Task has %d receive and %d transmit ring and cannot be bypassed\n", targ->nb_rxrings, targ->nb_txrings);
+		return -1;
+	}
+
+	return 0;
+}
+
+int reconnect_task(uint32_t lcore_id, uint32_t task_id)
+{
+	struct lcore_cfg *lconf = &lcore_cfg[lcore_id];
+	struct task_args *targ, *starg, *dtarg = NULL;
+	struct rte_ring *ring = NULL;
+
+	if (task_id >= lconf->n_tasks_all)
+		return -1;
+
+	targ = &lconf->targs[task_id];
+	if (targ->nb_txrings == 1) {
+		// Find source task
+		for (unsigned int i = 0; i < targ->n_prev_tasks; i++) {
+			starg = targ->prev_tasks[i];
+			for (unsigned int j = 0; j < starg->nb_txrings; j++) {
+				if (starg->tx_rings[j] == targ->tx_rings[0]) {
+					if (targ->n_prev_tasks == targ->nb_rxrings) {
+						starg->tx_rings[j] = targ->rx_rings[i];
+						struct task_base *tbase = starg->tbase;
+						tbase->tx_params_sw.tx_rings[j] = starg->tx_rings[j];
+						plog_info("Task has %d receive and 1 transmmit ring and can be reconnected, %d precedent tasks\n", targ->nb_rxrings, targ->n_prev_tasks);
+					} else if (targ->nb_rxrings == 1) {
+						starg->tx_rings[j] = targ->rx_rings[0];
+						struct task_base *tbase = starg->tbase;
+						tbase->tx_params_sw.tx_rings[j] = starg->tx_rings[j];
+						plog_info("Task has %d receive and 1 transmmit ring and ring %p can be reconnected, %d precedent tasks\n", targ->nb_rxrings, starg->tx_rings[j], targ->n_prev_tasks);
+					} else {
+						plog_err("Unexpected configuration: %d precedent tasks, %d rx rings\n", targ->n_prev_tasks, targ->nb_rxrings);
+					}
+				}
+			}
+		}
+	} else {
+		plog_info("Task has %d receive and %d transmit ring and cannot be bypassed\n", targ->nb_rxrings, targ->nb_txrings);
+		return -1;
+	}
+
+	return 0;
 }

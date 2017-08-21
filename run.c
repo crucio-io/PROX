@@ -1,5 +1,6 @@
 /*
-  Copyright(c) 2010-2016 Intel Corporation.
+  Copyright(c) 2010-2017 Intel Corporation.
+  Copyright(c) 2016-2017 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -34,6 +35,7 @@
 
 #include <rte_launch.h>
 #include <rte_cycles.h>
+#include <rte_atomic.h>
 
 #include "run.h"
 #include "prox_cfg.h"
@@ -68,7 +70,13 @@ void req_refresh(void)
 
 void quit(void)
 {
+	static rte_atomic32_t already_leaving = RTE_ATOMIC32_INIT(0);
+	if (!rte_atomic32_test_and_set(&already_leaving))
+		return;
+
 	plog_info("Leaving...\n");
+	if (lcore_cfg == NULL)
+		exit(EXIT_SUCCESS);
 	stop_core_all(-1);
 	stop_prox = 1;
 }

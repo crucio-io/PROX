@@ -1,5 +1,6 @@
 /*
-  Copyright(c) 2010-2016 Intel Corporation.
+  Copyright(c) 2010-2017 Intel Corporation.
+  Copyright(c) 2016-2017 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -116,12 +117,20 @@ static void display_pkt_len_draw_stats(struct screen_state *state)
 			uint64_t diff;
 
 			for (int j = 0; j < PKT_SIZE_COUNT; ++j) {
-				diff = last->tx_pkt_size[j] - prev->tx_pkt_size[j];
-				display_column_print(stats_col[j], i, "%13lu", val_to_rate(diff, delta_t));
+				if (last->tx_pkt_size[j] == (uint64_t)-1) {
+					display_column_print(stats_col[j], i, "     ---     ");
+				} else {
+					diff = last->tx_pkt_size[j] - prev->tx_pkt_size[j];
+					display_column_print(stats_col[j], i, "%13lu", val_to_rate(diff, delta_t));
+				}
 			}
 		} else {
 			for (int j = 0; j < PKT_SIZE_COUNT; ++j) {
-				display_column_print(stats_col[j], i, "%13lu", last->tx_pkt_size[j]);
+				if (last->tx_pkt_size[j] == (uint64_t)-1) {
+					display_column_print(stats_col[j], i, "     ---     ");
+				} else {
+					display_column_print(stats_col[j], i, "%13lu", last->tx_pkt_size[j]);
+				}
 			}
 		}
 	}

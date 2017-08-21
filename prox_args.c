@@ -1,5 +1,6 @@
 /*
-  Copyright(c) 2010-2016 Intel Corporation.
+  Copyright(c) 2010-2017 Intel Corporation.
+  Copyright(c) 2016-2017 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -52,7 +53,7 @@
 #include "cqm.h"
 
 #define MAX_RTE_ARGV 64
-#define MAX_ARG_LEN  32
+#define MAX_ARG_LEN  64
 
 struct cfg_depr {
 	const char *opt;
@@ -224,10 +225,17 @@ static int get_rte_cfg(__attribute__((unused))unsigned sindex, char *str, void *
 	}
 
 	if (STR_EQ(str, "eal")) {
+		char eal[MAX_STR_LEN_PROC];
 		if (pconfig->eal) {
 			free(pconfig->eal);
+			pconfig->eal = NULL;
 		}
-		pconfig->eal = strdup(pkey);
+		if (parse_str(eal, pkey, sizeof(eal)))
+			return -1;
+		pkey = eal;
+		strip_spaces(&pkey, 1);
+		if (*pkey)
+			pconfig->eal = strdup(pkey);
 		return 0;
 	}
 
@@ -342,6 +350,9 @@ static int get_global_cfg(__attribute__((unused))unsigned sindex, char *str, voi
 	if (STR_EQ(str, "mp rings")) {
 		return parse_flag(&pset->flags, DSF_MP_RINGS, pkey);
 	}
+	if (STR_EQ(str, "enable bypass")) {
+		return parse_flag(&pset->flags, DSF_ENABLE_BYPASS, pkey);
+	}
 
 	if (STR_EQ(str, "cpe table map")) {
 		/* The config defined ports through 0, 1, 2 ... which
@@ -438,7 +449,7 @@ static int get_defaults_cfg(__attribute__((unused)) unsigned sindex, char *str, 
 	return -1;
 }
 
-/* [port] parser */
+/* [cache set] parser */
 static int get_cache_set_cfg(unsigned sindex, char *str, void *data)
 {
 	struct prox_cache_set_cfg *cfg = (struct prox_cache_set_cfg *)data;
@@ -654,10 +665,6 @@ static int get_core_cfg(unsigned sindex, char *str, void *data)
 	}
 
 	struct task_args *targ = &lconf->targs[lconf->active_task];
-	if (STR_EQ(str, "forward arp replies")) {
-		targ->task_init->flag_features |= TASK_FEATURE_SENDING_ARP_REPLIES;
-		return 0;
-	}
 	if (STR_EQ(str, "tx ports from routing table")) {
 		uint32_t vals[PROX_MAX_PORTS];
 		uint32_t n_if;
@@ -814,6 +821,9 @@ static int get_core_cfg(unsigned sindex, char *str, void *data)
 	if (STR_EQ(str, "fast path handle arp")) {
 		return parse_flag(&targ->runtime_flags, TASK_FP_HANDLE_ARP, pkey);
 	}
+	if (STR_EQ(str, "multiple arp")) {
+		return parse_flag(&targ->flags, TASK_MULTIPLE_MAC, pkey);
+	}
 
 	/* Using tx port name, only a _single_ port can be assigned to a task. */
 	if (STR_EQ(str, "tx port")) {
@@ -946,7 +956,7 @@ static int get_core_cfg(unsigned sindex, char *str, void *data)
 				byte = (pkey2[i] - 'A' + 10) << 4;
 			}
 			else {
-				set_errf("Invalid character at %z (%c)", i, pkey2[i]);
+				set_errf("Invalid character in pkt inline at byte %d (%c)", i, pkey2[i]);
 				return -1;
 			}
 
@@ -960,7 +970,7 @@ static int get_core_cfg(unsigned sindex, char *str, void *data)
 				byte |= (pkey2[i + 1] - 'A' + 10);
 			}
 			else {
-				set_errf("Invalid character at %z (%c)", i, pkey2[i]);
+				set_errf("Invalid character in pkt inline at byte %d (%c)", i, pkey2[i + 1]);
 				return -1;
 			}
 			if (targ->pkt_size == sizeof(targ->pkt_inline)) {
@@ -984,6 +994,12 @@ static int get_core_cfg(unsigned sindex, char *str, void *data)
 	}
 	if (STR_EQ(str, "accuracy pos")) {
 		return parse_int(&targ->accur_pos, pkey);
+	}
+	if (STR_EQ(str, "signature")) {
+		return parse_int(&targ->sig, pkey);
+	}
+	if (STR_EQ(str, "signature pos")) {
+		return parse_int(&targ->sig_pos, pkey);
 	}
 	if (STR_EQ(str, "lat pos")) {
 		targ->lat_enabled = 1;
@@ -1173,8 +1189,10 @@ static int get_core_cfg(unsigned sindex, char *str, void *data)
 		if (parse_task_set(cts, pkey))
 			return -1;
 
-		if (cts->n_elems > MAX_WT_PER_LB)
+		if (cts->n_elems > MAX_WT_PER_LB) {
+			set_errf("Too many worker threads (max allowed %d)", MAX_WT_PER_LB - 1);
 			return -1;
+		}
 
 		targ->nb_worker_threads = cts->n_elems;
 		targ->nb_txrings += cts->n_elems;
@@ -1265,16 +1283,23 @@ static int get_core_cfg(unsigned sindex, char *str, void *data)
 				targ->flags |= TASK_ARG_DO_NOT_SET_SRC_MAC;
 				return 0;
 			}
-			else if (STR_EQ(pkey, "packet") == 0)
-				return -1;
-			else
+			else if (STR_EQ(pkey, "packet"))
 				return 0;
+			else if (STR_EQ(pkey, "packet")) {
+				targ->flags |= TASK_ARG_HW_SRC_MAC;
+				return 0;
+			} else {
+				return -1;
+			}
 		}
 		targ->flags |= TASK_ARG_SRC_MAC_SET;
 		return 0;
 	}
 	if (STR_EQ(str, "gateway ipv4")) { /* Gateway IP address used when generating */
 		return parse_ip(&targ->gateway_ipv4, pkey);
+	}
+	if (STR_EQ(str, "number of ip")) { /* Gateway IP address used when generating */
+		return parse_int(&targ->number_gen_ip, pkey);
 	}
 	if (STR_EQ(str, "local ipv4")) { /* source IP address to be used for packets */
 		return parse_ip(&targ->local_ipv4, pkey);
@@ -1526,7 +1551,7 @@ int prox_parse_args(int argc, char **argv)
 	}
 	plog_info("\n");
 
-	while ((opt = getopt(argc, argv, "f:dnzpo:tkuar:esiw:l:v:q:")) != EOF) {
+	while ((opt = getopt(argc, argv, "f:dnzpo:tkuar:emsiw:l:v:q:")) != EOF) {
 		switch (opt) {
 		case 'f':
 			/* path to config file */
@@ -1612,6 +1637,10 @@ int prox_parse_args(int argc, char **argv)
 			break;
 		case 'u':
 			prox_cfg.flags |= DSF_LISTEN_UDS;
+			break;
+		case 'm':
+			/* list supported task modes and exit */
+			prox_cfg.flags |= DSF_LIST_TASK_MODES;
 			break;
 		case 's':
 			/* check configuration file syntax and exit */
@@ -1900,6 +1929,8 @@ int prox_setup_rte(const char *prog_name)
 		char *ptr = rte_cfg.eal;
 		char *ptr2;
 		while (ptr != NULL) {
+			while (isspace(*ptr))
+				ptr++;
 			ptr2 = ptr;
 			ptr = strchr(ptr, ' ');
 			if (ptr) {

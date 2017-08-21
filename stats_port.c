@@ -1,5 +1,6 @@
 /*
-  Copyright(c) 2010-2016 Intel Corporation.
+  Copyright(c) 2010-2017 Intel Corporation.
+  Copyright(c) 2016-2017 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -168,6 +169,7 @@ static int find_xstats_str(struct rte_eth_xstats *xstats, int n, const char *nam
 
 void stats_port_init(void)
 {
+	int potential_ixgbe_warn = 0;
 	for (int i = 0; i < PROX_MAX_PORTS; i++) {
 		xstat_tpr_offset[i] = -1;
 		xstat_tor_offset[i] = -1;
@@ -196,6 +198,7 @@ void stats_port_init(void)
 			num_xstats[port_id] = rte_eth_xstats_get(port_id, eth_xstats[port_id], num_xstats[port_id]);
 #endif
 			if (!strcmp(prox_port_cfg[port_id].short_name, "ixgbe")) {
+				potential_ixgbe_warn = 1;
 				xstat_tor_offset[port_id] = find_xstats_str(eth_xstat_names[port_id], num_xstats[port_id], "rx_total_bytes");
 				xstat_tpr_offset[port_id] = find_xstats_str(eth_xstat_names[port_id], num_xstats[port_id], "rx_total_packets");
 			}
@@ -226,7 +229,7 @@ void stats_port_init(void)
 			break;
 		}
 	}
-	if (num_ixgbe_xstats == 0)
+	if ((num_ixgbe_xstats == 0) && (potential_ixgbe_warn))
 		plog_warn("Failed to initialize ixgbe xstat, running without ixgbe xstats\n");
 #endif
 }
@@ -269,7 +272,14 @@ static void nic_read_stats(uint8_t port_id)
 	if (num_xstats[port_id]) {
 		rte_eth_xstats_get(port_id, eth_xstats[port_id], num_xstats[port_id]);
 		for (size_t i = 0; i < sizeof(tx_pkt_size_offset[0])/sizeof(tx_pkt_size_offset[0][0]); ++i) {
-			stats->tx_pkt_size[i] = (eth_xstats[port_id][tx_pkt_size_offset[port_id][i]]).value;
+			if (tx_pkt_size_offset[port_id][i] != -1)
+				stats->tx_pkt_size[i] = (eth_xstats[port_id][tx_pkt_size_offset[port_id][i]]).value;
+			else
+				stats->tx_pkt_size[i] = -1;
+		}
+	} else {
+		for (size_t i = 0; i < sizeof(tx_pkt_size_offset[0])/sizeof(tx_pkt_size_offset[0][0]); ++i) {
+			stats->tx_pkt_size[i] = -1;
 		}
 	}
 #endif
@@ -298,6 +308,9 @@ static void nic_read_stats(uint8_t port_id)
 				stats->rx_bytes = eth_stat.ibytes +
 					(20 * eth_stat.ipackets - 20 * (eth_stat.ierrors + eth_stat.imissed));
 		}
+	} else if (strcmp(prox_port_cfg[port_id].short_name, "i40e_vf") == 0) {
+		// For I40E VF, imissed already part of received packets
+		stats->rx_tot = eth_stat.ipackets;
 	} else {
 		stats->rx_tot = eth_stat.ipackets + eth_stat.imissed;
 	}

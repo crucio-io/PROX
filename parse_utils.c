@@ -1,5 +1,6 @@
 /*
-  Copyright(c) 2010-2016 Intel Corporation.
+  Copyright(c) 2010-2017 Intel Corporation.
+  Copyright(c) 2016-2017 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -55,6 +56,10 @@
 #define MAX_LEN_VAR_NAME  24
 #define MAX_LEN_VAL       512
 #define MAX_NB_VARS       32
+
+#if MAX_WT_PER_LB > MAX_INDEX
+#error MAX_WT_PER_LB > MAX_INDEX
+#endif
 
 /* The CPU topology of the system is used to parse "socket
    notation". This notation allows to refer to cores on specific
@@ -489,7 +494,6 @@ void strip_spaces(char *strings[], const uint32_t count)
 		while (len && isspace(strings[i][len - 1])) {
 			strings[i][len - 1] = '\0';
 			--len;
-
 		}
 	}
 }
@@ -604,12 +608,12 @@ static int get_lcore_id(uint32_t socket_id, uint32_t core_id, int ht)
 	}
 	if (socket_id >= cpu_topo.n_sockets) {
 		set_errf("Current CPU topology reported that there are %u CPU sockets, CPU topology = %u socket(s), %u physical cores per socket, %u thread(s) per physical core",
-			 cpu_topo.n_sockets, cpu_topo.n_sockets, cpu_topo.n_cores[0], cpu_topo.socket[socket_id][core_id][1] == -1? 1: 2);
+			 cpu_topo.n_sockets, cpu_topo.n_sockets, cpu_topo.n_cores[0], cpu_topo.socket[0][0][1] == -1? 1: 2);
 		return -1;
 	}
 	if (core_id >= cpu_topo.n_cores[socket_id]) {
 		set_errf("Core %u on socket %u does not exist, CPU topology = %u socket(s), %u physical cores per socket, %u thread(s) per physical core",
-			 core_id, socket_id, cpu_topo.n_sockets, cpu_topo.n_cores[0], cpu_topo.socket[socket_id][core_id][1] == -1? 1: 2);
+			 core_id, socket_id, cpu_topo.n_sockets, cpu_topo.n_cores[0], cpu_topo.socket[socket_id][0][1] == -1? 1: 2);
 		return -1;
 	}
 	if (cpu_topo.socket[socket_id][core_id][!!ht] == -1) {

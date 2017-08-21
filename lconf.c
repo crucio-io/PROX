@@ -1,5 +1,6 @@
 /*
-  Copyright(c) 2010-2016 Intel Corporation.
+  Copyright(c) 2010-2017 Intel Corporation.
+  Copyright(c) 2016-2017 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -92,12 +93,21 @@ void lcore_cfg_alloc_hp(void)
 	lcore_cfg = prox_zmalloc(mem_size, rte_socket_id());
 	PROX_PANIC(lcore_cfg == NULL, "Could not allocate memory for core control structures\n");
 	rte_memcpy(lcore_cfg, lcore_cfg_init, mem_size);
+
+	/* get thread ID for master core */
+	lcore_cfg[rte_lcore_id()].thread_id = pthread_self();
 }
 
 int lconf_run(__attribute__((unused)) void *dummy)
 {
 	uint32_t lcore_id = rte_lcore_id();
 	struct lcore_cfg *lconf = &lcore_cfg[lcore_id];
+
+	/* get thread ID, and set cancellation type to asynchronous */
+	lconf->thread_id = pthread_self();
+	int ret = pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
+	if (ret != 0)
+		plog_warn("pthread_setcanceltype() failed on core %u: %i\n", lcore_id, ret);
 
 	plog_info("Entering main loop on core %u\n", lcore_id);
 	return lconf->thread_x(lconf);
@@ -244,8 +254,16 @@ int lconf_do_flags(struct lcore_cfg *lconf)
 
 			if (task_base_get_original_rx_pkt_function(t) != rx_pkt_dummy) {
 				task_base_add_rx_pkt_function(t, rx_pkt_trace);
+				if (t->aux->tx_pkt_orig)
+					t->tx_pkt = t->aux->tx_pkt_orig;
 				t->aux->tx_pkt_orig = t->tx_pkt;
 				t->tx_pkt = tx_pkt_trace;
+			} else {
+				t->aux->task_rt_dump.n_print_tx = lconf->msg.val;
+				if (t->aux->tx_pkt_orig)
+					t->tx_pkt = t->aux->tx_pkt_orig;
+				t->aux->tx_pkt_orig = t->tx_pkt;
+				t->tx_pkt = tx_pkt_dump;
 			}
 		}
 		break;

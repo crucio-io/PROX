@@ -1,5 +1,6 @@
 /*
-  Copyright(c) 2010-2016 Intel Corporation.
+  Copyright(c) 2010-2017 Intel Corporation.
+  Copyright(c) 2016-2017 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -80,14 +81,39 @@ struct task_init *to_task_init(const char *mode_str, const char *sub_mode_str)
 	return NULL;
 }
 
+static int compare_strcmp(const void *a, const void *b)
+{
+	return strcmp(*(const char * const *)a, *(const char * const *)b);
+}
+
 void tasks_list(void)
 {
 	struct task_init *cur_t;
+	char buf[sizeof(cur_t->mode_str) + sizeof(cur_t->sub_mode_str) + 4];
 
-	plog_info("Supported modes are: \n");
+	int nb_modes = 1; /* master */
 	LIST_FOREACH(cur_t, &head, entries) {
-		plog_info("mode=%s, sub_mode = %s\n", cur_t->mode_str, cur_t->sub_mode_str);
+		++nb_modes;
 	}
+
+	char **modes = calloc(nb_modes, sizeof(*modes));
+	char **cur_m = modes;
+	*cur_m++ = strdup("master");
+	LIST_FOREACH(cur_t, &head, entries) {
+		snprintf(buf, sizeof(buf), "%s%s%s",
+			cur_t->mode_str,
+			(cur_t->sub_mode_str[0] == 0) ? "" : " / ",
+			cur_t->sub_mode_str);
+		*cur_m++ = strdup(buf);
+	}
+	qsort(modes, nb_modes, sizeof(*modes), compare_strcmp);
+
+	plog_info("=== List of supported task modes / sub modes ===\n");
+	for (cur_m = modes; nb_modes; ++cur_m, --nb_modes) {
+		plog_info("\t%s\n", *cur_m);
+		free(*cur_m);
+	}
+	free(modes);
 }
 
 static size_t calc_memsize(struct task_args *targ, size_t task_size)
@@ -181,6 +207,18 @@ static size_t init_rx_tx_rings_ports(struct task_args *targ, struct task_base *t
 		}
 	}
 
+	if ((targ->nb_txrings != 0) && (!targ->tx_opt_ring) && (!(targ->flags & TASK_ARG_DROP))) {
+		// Transmitting to a ring in NO DROP. We need to make sure the receiving task in not running on the same core.
+		// Otherwise we might end up in a dead lock: trying in a loop to transmit to a task which cannot receive anymore
+		// (as npt being scheduled).
+		struct core_task ct;
+		struct task_args *dtarg;
+		for (unsigned int j = 0; j < targ->nb_txrings; j++) {
+			ct = targ->core_task_set[0].core_task[j];
+			PROX_PANIC(ct.core == targ->lconf->id, "Core %d, task %d: NO_DROP task transmitting to another task (core %d, task %d) running on on same core => potential deadlock\n", targ->lconf->id, targ->id, ct.core, ct.task);
+			//plog_info("Core %d, task %d: NO_DROP task transmitting to another task (core %d, task %d) running on on same core => potential deadlock\n", targ->lconf->id, targ->id, ct.core, ct.task);
+		}
+	}
 	if ((targ->nb_txrings != 0) && (targ->nb_txports == 1)) {
 		/* Transmitting to multiple rings and one port */
 		plog_info("Initializing with 1 port %d queue %d nb_rings=%d\n", targ->tx_port_queue[0].port, targ->tx_port_queue[0].queue, targ->nb_txrings);

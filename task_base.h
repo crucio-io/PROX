@@ -1,5 +1,6 @@
 /*
-  Copyright(c) 2010-2016 Intel Corporation.
+  Copyright(c) 2010-2017 Intel Corporation.
+  Copyright(c) 2016-2017 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -66,7 +67,7 @@
 #define TASK_FEATURE_LUT_QINQ_RSS              0x2000
 #define TASK_FEATURE_LUT_QINQ_HASH             0x4000
 #define TASK_FEATURE_RX_ALL                    0x8000
-#define TASK_FEATURE_SENDING_ARP_REPLIES       0x10000
+#define TASK_MULTIPLE_MAC                      0x10000
 
 #define FLAG_TX_FLUSH                  0x01
 #define FLAG_NEVER_FLUSH               0x02

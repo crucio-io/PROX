@@ -1,5 +1,6 @@
 /*
-  Copyright(c) 2010-2016 Intel Corporation.
+  Copyright(c) 2010-2017 Intel Corporation.
+  Copyright(c) 2016-2017 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -214,11 +215,7 @@ static struct cfg_section *cfg_check_section(char *buffer, struct cfg_section *p
 	}
 
 	psec->nbindex = parse_list_set(psec->indexp, pend, MAX_INDEX);
-	if (psec->nbindex == -1) {
-		plog_err("\t\tError in cfg_check_section('%s'): %s\n", buffer, get_parse_err());
-		display_end();
-		exit(EXIT_FAILURE);
-	}
+	PROX_PANIC(psec->nbindex == -1, "\t\tError in cfg_check_section('%s'): %s\n", buffer, get_parse_err());
 
 	for (int i = 0; i < psec->nbindex; ++i) {
 		psec->indexp[i] |= CFG_INDEXED;

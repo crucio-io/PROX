@@ -1,5 +1,6 @@
 /*
-  Copyright(c) 2010-2016 Intel Corporation.
+  Copyright(c) 2010-2017 Intel Corporation.
+  Copyright(c) 2016-2017 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -35,4 +36,4 @@
 #define MAX_NAME_SIZE           64
 #define MAX_PROTOCOLS           3
 #define MAX_RINGS_PER_TASK      (MAX_WT_PER_LB*MAX_PROTOCOLS)
-#define MAX_WT_PER_LB           16
+#define MAX_WT_PER_LB           64
