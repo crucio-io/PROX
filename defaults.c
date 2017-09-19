@@ -198,5 +198,7 @@ void set_port_defaults(void)
 		prox_port_cfg[i].rx_ring[0] = '\0';
 		prox_port_cfg[i].tx_ring[0] = '\0';
 		prox_port_cfg[i].mtu = PROX_MTU;
+		prox_port_cfg[i].ipv4_range_available = 0;
+		prox_port_cfg[i].ipv4_pos = 30;
 	}
 }

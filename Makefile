@@ -186,6 +186,7 @@ SRCS-$(call rte_ver_GE,1,8,0,16) += handle_nsh.c
 SRCS-y += handle_lb_5tuple.c
 SRCS-y += handle_blockudp.c
 SRCS-y += toeplitz.c
+SRCS-y += ipv4_range_parser.c
 SRCS-$(CONFIG_RTE_LIBRTE_PIPELINE) += handle_pf_acl.c
 
 SRCS-y += thread_nop.c

@@ -37,6 +37,7 @@
 #include <rte_ethdev.h>
 
 #include "prox_globals.h"
+#include "ipv4_range_parser.h"
 
 enum addr_type {PROX_PORT_MAC_HW, PROX_PORT_MAC_SET, PROX_PORT_MAC_RAND};
 
@@ -74,6 +75,9 @@ struct prox_port_cfg {
 	struct {
 		int tx_offload_cksum;
 	} capabilities;
+	struct ipv4_address_range address_range;
+	uint32_t ipv4_pos;
+	uint8_t ipv4_range_available;
 };
 
 extern rte_atomic32_t lsc;

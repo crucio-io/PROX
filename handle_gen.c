@@ -1032,8 +1032,23 @@ static void task_gen_pkt_template_recalc_checksum(struct task_gen *task)
 	}
 }
 
+static void task_gen_pkt_template_set_ip(struct task_gen *task)
+{
+	if (prox_port_cfg[task->base.tx_params_hw.tx_port_queue->port].ipv4_range_available) {
+		uint32_t ipv4;
+		struct ipv4_address_range address_range;
+		memcpy(&address_range, &prox_port_cfg[task->base.tx_params_hw.tx_port_queue->port].address_range, sizeof(struct ipv4_address_range));
+		uint32_t ip_pos = prox_port_cfg[task->base.tx_params_hw.tx_port_queue->port].ipv4_pos;
+		for (uint32_t i = 0; i < task->n_pkts; ++i) {
+			get_next_ipv4_address(&address_range, &ipv4);
+			rte_memcpy(&task->pkt_template[i].buf[ip_pos], &ipv4, 4);
+		}
+	}
+}
+
 static void task_gen_pkt_template_recalc_all(struct task_gen *task)
 {
+	task_gen_pkt_template_set_ip(task);
 	task_gen_pkt_template_recalc_metadata(task);
 	task_gen_pkt_template_recalc_checksum(task);
 }

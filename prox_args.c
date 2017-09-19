@@ -577,6 +577,14 @@ static int get_port_cfg(unsigned sindex, char *str, void *data)
 	else if (STR_EQ(str, "tx_ring")) {
 		parse_str(cfg->tx_ring, pkey, sizeof(cfg->tx_ring));
 	}
+	else if (STR_EQ(str, "ip range")) {
+		if (!(cfg->ipv4_range_available = parse_ipv4_address_range(pkey, &cfg->address_range))) {
+			return -1;
+		}
+	}
+	else if (STR_EQ(str, "ip pos")) {
+		return parse_int(&cfg->ipv4_pos, pkey);
+	}
 
 	return 0;
 }
