@@ -1,6 +1,6 @@
 /*
   Copyright(c) 2010-2017 Intel Corporation.
-  Copyright(c) 2016-2017 Viosoft Corporation.
+  Copyright(c) 2016-2018 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -55,7 +55,6 @@ struct task_base;
 void task_gen_set_pkt_count(struct task_base *tbase, uint32_t count);
 int task_gen_set_pkt_size(struct task_base *tbase, uint32_t pkt_size);
 void task_gen_set_rate(struct task_base *tbase, uint64_t bps);
-void task_gen_set_gateway_ip(struct task_base *tbase, uint32_t ip);
 void task_gen_reset_randoms(struct task_base *tbase);
 void task_gen_reset_values(struct task_base *tbase);
 int task_gen_set_value(struct task_base *tbase, uint32_t value, uint32_t offset, uint32_t len);

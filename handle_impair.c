@@ -1,6 +1,6 @@
 /*
   Copyright(c) 2010-2017 Intel Corporation.
-  Copyright(c) 2016-2017 Viosoft Corporation.
+  Copyright(c) 2016-2018 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -41,6 +41,7 @@
 #include "random.h"
 #include "handle_impair.h"
 #include "prefetch.h"
+#include "prox_port_cfg.h"
 
 #if RTE_VERSION < RTE_VERSION_NUM(1,8,0,0)
 #define RTE_CACHE_LINE_SIZE CACHE_LINE_SIZE
@@ -76,8 +77,12 @@ struct task_impair {
 	uint64_t last_idx;
 	struct queue *buffer;
 	uint32_t socket_id;
-	int need_update;
+	uint32_t flags;
+	uint8_t src_mac[6];
 };
+
+#define IMPAIR_NEED_UPDATE     1
+#define IMPAIR_SET_MAC         2
 
 static int handle_bulk_impair(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts);
 static int handle_bulk_impair_random(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts);
@@ -92,7 +97,7 @@ void task_impair_set_proba(struct task_base *tbase, float proba)
 void task_impair_set_delay_us(struct task_base *tbase, uint32_t delay_us, uint32_t random_delay_us)
 {
 	struct task_impair *task = (struct task_impair *)tbase;
-	task->need_update = 1;
+	task->flags |= IMPAIR_NEED_UPDATE;
 	task->random_delay_us = random_delay_us;
 	task->delay_us = delay_us;
 }
@@ -102,9 +107,9 @@ static void task_impair_update(struct task_base *tbase)
 	struct task_impair *task = (struct task_impair *)tbase;
 	uint32_t queue_len = 0;
 	size_t mem_size;
-	if (!task->need_update)
+	if ((task->flags & IMPAIR_NEED_UPDATE) == 0)
 		return;
-	task->need_update = 0;
+	task->flags &= ~IMPAIR_NEED_UPDATE;
 	uint64_t now = rte_rdtsc();
 	uint8_t out[MAX_PKT_BURST] = {0};
 	uint64_t now_idx = (now >> DELAY_ACCURACY) & DELAY_MAX_MASK;
@@ -203,8 +208,23 @@ static int handle_bulk_random_drop(struct task_base *tbase, struct rte_mbuf **mb
 {
 	struct task_impair *task = (struct task_impair *)tbase;
 	uint8_t out[MAX_PKT_BURST];
+	struct ether_hdr * hdr[MAX_PKT_BURST];
 	for (uint16_t i = 0; i < n_pkts; ++i) {
-		out[i] = rand_r(&task->seed) <= task->tresh? 0 : OUT_DISCARD;
+		PREFETCH0(mbufs[i]);
+	}
+	for (uint16_t i = 0; i < n_pkts; ++i) {
+		hdr[i] = rte_pktmbuf_mtod(mbufs[i], struct ether_hdr *);
+		PREFETCH0(hdr[i]);
+	}
+	if (task->flags & IMPAIR_SET_MAC) {
+		for (uint16_t i = 0; i < n_pkts; ++i) {
+			ether_addr_copy((struct ether_addr *)&task->src_mac[0], &hdr[i]->s_addr);
+			out[i] = rand_r(&task->seed) <= task->tresh? 0 : OUT_DISCARD;
+		}
+	} else {
+		for (uint16_t i = 0; i < n_pkts; ++i) {
+			out[i] = rand_r(&task->seed) <= task->tresh? 0 : OUT_DISCARD;
+		}
 	}
 	return task->base.tx_pkt(&task->base, mbufs, n_pkts, out);
 	task_impair_update(tbase);
@@ -218,11 +238,21 @@ static int handle_bulk_impair(struct task_base *tbase, struct rte_mbuf **mbufs, 
 	uint16_t enqueue_failed;
 	uint16_t i;
 	int ret = 0;
+	struct ether_hdr * hdr[MAX_PKT_BURST];
+	for (uint16_t i = 0; i < n_pkts; ++i) {
+		PREFETCH0(mbufs[i]);
+	}
+	for (uint16_t i = 0; i < n_pkts; ++i) {
+		hdr[i] = rte_pktmbuf_mtod(mbufs[i], struct ether_hdr *);
+		PREFETCH0(hdr[i]);
+	}
 
 	int nb_empty_slots = (task->queue_tail - task->queue_head + task->queue_mask) & task->queue_mask;
 	if (likely(nb_empty_slots >= n_pkts)) {
 		/* We know n_pkts fits, no need to check for every packet */
 		for (i = 0; i < n_pkts; ++i) {
+			if (task->flags & IMPAIR_SET_MAC)
+				ether_addr_copy((struct ether_addr *)&task->src_mac[0], &hdr[i]->s_addr);
 			task->queue[task->queue_head].tsc = now + task->delay_time;
 			task->queue[task->queue_head].mbuf = mbufs[i];
 			task->queue_head = (task->queue_head + 1) & task->queue_mask;
@@ -230,6 +260,8 @@ static int handle_bulk_impair(struct task_base *tbase, struct rte_mbuf **mbufs, 
 	} else {
 		for (i = 0; i < n_pkts; ++i) {
 			if (((task->queue_head + 1) & task->queue_mask) != task->queue_tail) {
+				if (task->flags & IMPAIR_SET_MAC)
+					ether_addr_copy((struct ether_addr *)&task->src_mac[0], &hdr[i]->s_addr);
 				task->queue[task->queue_head].tsc = now + task->delay_time;
 				task->queue[task->queue_head].mbuf = mbufs[i];
 				task->queue_head = (task->queue_head + 1) & task->queue_mask;
@@ -318,6 +350,14 @@ static int handle_bulk_impair_random(struct task_base *tbase, struct rte_mbuf **
 	int ret = 0;
 	uint64_t packet_time, idx;
 	uint64_t now_idx = (now >> DELAY_ACCURACY) & DELAY_MAX_MASK;
+	struct ether_hdr * hdr[MAX_PKT_BURST];
+	for (uint16_t i = 0; i < n_pkts; ++i) {
+		PREFETCH0(mbufs[i]);
+	}
+	for (uint16_t i = 0; i < n_pkts; ++i) {
+		hdr[i] = rte_pktmbuf_mtod(mbufs[i], struct ether_hdr *);
+		PREFETCH0(hdr[i]);
+	}
 
 	for (i = 0; i < n_pkts; ++i) {
 		packet_time = now + random_delay(&task->state, task->delay_time, task->delay_time_mask);
@@ -325,6 +365,8 @@ static int handle_bulk_impair_random(struct task_base *tbase, struct rte_mbuf **
 		while (idx != ((now_idx - 1) & DELAY_MAX_MASK)) {
 			struct queue *queue = &task->buffer[idx];
 			if (((queue->queue_head + 1) & task->queue_mask) != queue->queue_tail) {
+				if (task->flags & IMPAIR_SET_MAC)
+					ether_addr_copy((struct ether_addr *)&task->src_mac[0], &hdr[i]->s_addr);
 				queue->queue_elem[queue->queue_head].mbuf = mbufs[i];
 				queue->queue_head = (queue->queue_head + 1) & task->queue_mask;
 				break;
@@ -421,6 +463,12 @@ static void init_task(struct task_base *tbase, struct task_args *targ)
 		}
 	}
 	random_init_seed(&task->state);
+	if (targ->nb_txports) {
+		memcpy(&task->src_mac[0], &prox_port_cfg[tbase->tx_params_hw.tx_port_queue[0].port].eth_addr, sizeof(struct ether_addr));
+		task->flags = IMPAIR_SET_MAC;
+	} else {
+		task->flags = 0;
+	}
 }
 
 static struct task_init tinit = {

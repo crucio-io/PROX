@@ -1,6 +1,6 @@
 /*
   Copyright(c) 2010-2017 Intel Corporation.
-  Copyright(c) 2016-2017 Viosoft Corporation.
+  Copyright(c) 2016-2018 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -42,6 +42,7 @@
 
 #include "log.h"
 #include "display.h"
+#include "defaults.h"
 #include "etypes.h"
 #include "prox_cfg.h"
 
@@ -156,7 +157,6 @@ static const char* lvl_to_str(int lvl, int always)
 	}
 }
 
-#define DUMP_PKT_LEN 128
 static	int dump_pkt(char *dst, size_t dst_size, const struct rte_mbuf *mbuf)
 {
 	const struct ether_hdr *peth = rte_pktmbuf_mtod(mbuf, const struct ether_hdr *);

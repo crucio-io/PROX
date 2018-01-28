@@ -1,6 +1,6 @@
 /*
   Copyright(c) 2010-2017 Intel Corporation.
-  Copyright(c) 2016-2017 Viosoft Corporation.
+  Copyright(c) 2016-2018 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -44,6 +44,7 @@ void set_port_defaults(void);
 
 #define MAX_PKT_BURST   64
 #define MAX_RING_BURST	64
+#define DUMP_PKT_LEN 128
 
 #if MAX_RING_BURST < MAX_PKT_BURST
 #error MAX_RING_BURST < MAX_PKT_BURST

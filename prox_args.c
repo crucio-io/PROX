@@ -1,6 +1,6 @@
 /*
   Copyright(c) 2010-2017 Intel Corporation.
-  Copyright(c) 2016-2017 Viosoft Corporation.
+  Copyright(c) 2016-2018 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -1087,6 +1087,15 @@ static int get_core_cfg(unsigned sindex, char *str, void *data)
 				set_errf("Master core can only have one task\n");
 				return -1;
 			}
+			// Initialize number of tasks to 1 for master, even if no task specified
+			lconf->n_tasks_all = 1;
+			lconf->active_task = 0;
+			lconf->targs[lconf->active_task].task = 0;
+			struct task_init* task_init = to_task_init(mode, "");
+			if (task_init) {
+				targ->mode = task_init->mode;
+			}
+			targ->task_init = task_init;
 			return 0;
 		}
 
@@ -1255,8 +1264,20 @@ static int get_core_cfg(unsigned sindex, char *str, void *data)
 
 		targ->task_init = to_task_init(mode_str, sub_mode_str);
 		if (!targ->task_init) {
-			set_errf("sub mode %s not supported for mode %s", sub_mode_str, mode_str);
-			return -1;
+			if (strcmp(sub_mode_str, "l3") != 0) {
+				set_errf("sub mode %s not supported for mode %s", sub_mode_str, mode_str);
+				return -1;
+			}
+			targ->task_init = to_task_init(mode_str, "");
+			if (!targ->task_init) {
+				set_errf("sub mode %s not supported for mode %s", sub_mode_str, mode_str);
+				return -1;
+			}
+		}
+		if (strcmp(sub_mode_str, "l3") == 0) {
+			prox_cfg.flags |= DSF_CTRL_PLANE_ENABLED;
+			targ->task_init->flag_features |= TASK_FEATURE_L3;
+			strcpy(targ->task_init->sub_mode_str, "l3");
 		}
 		return 0;
 	}
@@ -1305,9 +1326,6 @@ static int get_core_cfg(unsigned sindex, char *str, void *data)
 	}
 	if (STR_EQ(str, "gateway ipv4")) { /* Gateway IP address used when generating */
 		return parse_ip(&targ->gateway_ipv4, pkey);
-	}
-	if (STR_EQ(str, "number of ip")) { /* Gateway IP address used when generating */
-		return parse_int(&targ->number_gen_ip, pkey);
 	}
 	if (STR_EQ(str, "local ipv4")) { /* source IP address to be used for packets */
 		return parse_ip(&targ->local_ipv4, pkey);

@@ -1,6 +1,6 @@
 ##
 # Copyright(c) 2010-2015 Intel Corporation.
-# Copyright(c) 2016-2017 Viosoft Corporation.
+# Copyright(c) 2016-2018 Viosoft Corporation.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -40,7 +40,7 @@ finer grained network functions like QoS, Routing, load-balancing...
 
 Compiling and running this application
 --------------------------------------
-This application supports DPDK 16.04, 16.11, 16.11.1, 17.02 and 17.05.
+This application supports DPDK 16.04, 16.11, 16.11.1, 17.02, 17.05 and 17.08.
 The following commands assume that the following variables have been set:
 
 export RTE_SDK=/path/to/dpdk

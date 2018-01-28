@@ -1,6 +1,6 @@
 /*
   Copyright(c) 2010-2017 Intel Corporation.
-  Copyright(c) 2016-2017 Viosoft Corporation.
+  Copyright(c) 2016-2018 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -56,6 +56,7 @@
 #define DSF_DISABLE_CMT           0x00002000      /* CMT disabled */
 #define DSF_LIST_TASK_MODES       0x00004000      /* list supported task modes and exit */
 #define DSF_ENABLE_BYPASS         0x00008000      /* Use Multi Producer rings to enable ring bypass */
+#define DSF_CTRL_PLANE_ENABLED    0x00010000      /* ctrl plane enabled */
 
 #define MAX_PATH_LEN 1024
 

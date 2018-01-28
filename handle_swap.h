@@ -1,6 +1,6 @@
 /*
   Copyright(c) 2010-2017 Intel Corporation.
-  Copyright(c) 2016-2017 Viosoft Corporation.
+  Copyright(c) 2016-2018 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -34,6 +34,5 @@
 #define _HANDLE_SWAP_H_
 
 struct task_base;
-void task_swap_set_local_ip(struct task_base *tbase, uint32_t ip);
 
 #endif /* _HANDLE_SWAP_H_ */

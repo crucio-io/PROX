@@ -1,6 +1,6 @@
 /*
   Copyright(c) 2010-2017 Intel Corporation.
-  Copyright(c) 2016-2017 Viosoft Corporation.
+  Copyright(c) 2016-2018 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -62,9 +62,7 @@ static void task_update_config(struct task_arp *task)
 
 static void handle_arp(struct task_arp *task, struct ether_hdr_arp *hdr, struct ether_addr *s_addr)
 {
-	prepare_arp_reply(hdr, s_addr);
-	memcpy(hdr->ether_hdr.d_addr.addr_bytes, hdr->ether_hdr.s_addr.addr_bytes, 6);
-	memcpy(hdr->ether_hdr.s_addr.addr_bytes, s_addr, 6);
+	build_arp_reply(hdr, s_addr);
 }
 
 static int handle_arp_bulk(struct task_base *tbase, struct rte_mbuf **mbufs, uint16_t n_pkts)

@@ -1,6 +1,6 @@
 /*
   Copyright(c) 2010-2017 Intel Corporation.
-  Copyright(c) 2016-2017 Viosoft Corporation.
+  Copyright(c) 2016-2018 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -38,7 +38,7 @@
 
 /* PROGRAM_NAME defined through Makefile */
 #define VERSION_MAJOR 0
-#define VERSION_MINOR 39
+#define VERSION_MINOR 41
 #define VERSION_REV   0
 
 #if VERSION_REV > 0

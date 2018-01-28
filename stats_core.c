@@ -1,6 +1,6 @@
 /*
   Copyright(c) 2010-2017 Intel Corporation.
-  Copyright(c) 2016-2017 Viosoft Corporation.
+  Copyright(c) 2016-2018 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -278,7 +278,7 @@ void stats_lcore_post_proc(void)
 			ls->cmt_bytes = ls->cmt_data * scm->rdt_features.upscaling_factor;
 			lss->mbm_tot_bytes = ls->mbm_tot * scm->rdt_features.upscaling_factor;
 			lss->mbm_loc_bytes = ls->mbm_loc * scm->rdt_features.upscaling_factor;
-			plogx_dbg("cache[core %d] = %ld\n", ls->lcore_id, ls->cmt_bytes);
+			//plogx_dbg("cache[core %d] = %ld\n", ls->lcore_id, ls->cmt_bytes);
 		}
 	}
 	for (uint8_t i = 0; i < scm->n_lcore_stats; ++i) {

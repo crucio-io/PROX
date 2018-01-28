@@ -1,6 +1,6 @@
 ##
 # Copyright(c) 2010-2015 Intel Corporation.
-# Copyright(c) 2016-2017 Viosoft Corporation.
+# Copyright(c) 2016-2018 Viosoft Corporation.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -48,74 +48,108 @@ parameters:
     label: Key name
     description: Name of key-pair to be used for compute instance
     default: prox
-  dpdk_network:
+  dataplane_network:
     type: string
     label: Private network name or ID
     description: Network to attach instance to.
-    default: dpdk-network
-  private_network:
+    default: dataplane-network
+  admin_network:
     type: string
     label: Private network name or ID
     description: Network to attach instance to.
     default: admin_internal_net
+  floating_network:
+    type: string
+    label: Floating network name or ID
+    description: Public Network to attach instance to.
+    default: admin_floating_net
   availability_zone:
     type: string
     description: The Availability Zone to launch the instance.
     default: nova
 
 resources:
+  sut_admin_port:
+     type: OS::Neutron::Port
+     properties:
+       network: {get_param: admin_network}
+       security_groups:
+         - default
+  sut_dataplane_port:
+     type: OS::Neutron::Port
+     properties:
+       network: {get_param: dataplane_network}
+       security_groups:
+         - default
+  sut_floating_ip:
+     type: OS::Neutron::FloatingIP
+     properties:
+       floating_network: {get_param: floating_network}
+       port_id: {get_resource: sut_admin_port}
   sut:
     type: OS::Nova::Server
     properties:
       availability_zone: { get_param: availability_zone }
       user_data:
-        get_file: prox_sut_user_data.sh
+        get_file: prox_user_data.sh
       key_name: { get_param: key }
       image: { get_param: image }
       flavor: { get_param: flavor }
       networks:
-        - network: { get_param: private_network }
-        - network: { get_param: dpdk_network }
+        - port: {get_resource: sut_admin_port}
+        - port: {get_resource: sut_dataplane_port}
+  gen_admin_port:
+     type: OS::Neutron::Port
+     properties:
+       network: {get_param: admin_network}
+       security_groups:
+         - default
+  gen_dataplane_port:
+     type: OS::Neutron::Port
+     properties:
+       network: {get_param: dataplane_network}
+       security_groups:
+         - default
+  gen_floating_ip:
+     type: OS::Neutron::FloatingIP
+     properties:
+       floating_network: {get_param: floating_network}
+       port_id: {get_resource: gen_admin_port}
   gen:
     type: OS::Nova::Server
     properties:
       availability_zone: { get_param: availability_zone }
       user_data:
-        get_file: prox_gen_user_data.sh
+        get_file: prox_user_data.sh
       key_name: { get_param: key }
       image: { get_param: image }
       flavor: { get_param: flavor }
       networks:
-        - network: { get_param: private_network }
-        - network: { get_param: dpdk_network }
-
-  sut_floating_ip:
-    type: OS::Nova::FloatingIP
-    properties:
-      pool: admin_floating_net
-
-  gen_floating_ip:
-    type: OS::Nova::FloatingIP
-    properties:
-      pool: admin_floating_net
-
-  sut_association:
-    type: OS::Nova::FloatingIPAssociation
-    properties:
-      floating_ip: { get_resource: sut_floating_ip }
-      server_id: { get_resource: sut }
-
-  gen_association:
-    type: OS::Nova::FloatingIPAssociation
-    properties:
-      floating_ip: { get_resource: gen_floating_ip }
-      server_id: { get_resource: gen }
+        - port: {get_resource: gen_admin_port}
+        - port: {get_resource: gen_dataplane_port}
 
 outputs:
-  sut_ip:
-    description: IP address of the instance
-    value: { get_attr: [sut, first_address] }
-  gen_ip:
-    description: IP address of the instance
-    value: { get_attr: [gen, first_address] }
-
+  sut_private_ip:
+    description: IP address of the sut admin port
+    value: { get_attr: [sut_admin_port, fixed_ips, 0, ip_address] }
+  sut_public_ip:
+    description: Floating IP address of sut in public network
+    value: { get_attr: [ sut_floating_ip, floating_ip_address ] }
+  sut_dataplane_ip:
+    description: IP address of sut dataplane port
+    value: { get_attr: [sut_dataplane_port, fixed_ips, 0, ip_address] }
+  sut_dataplane_mac:
+    description: The MAC address of the sut dataplane port
+    value: { get_attr: [sut_dataplane_port, mac_address] }
+  gen_private_ip:
+    description: IP address of the gen admin port
+    value: { get_attr: [gen_admin_port, fixed_ips, 0, ip_address] }
+  gen_public_ip:
+    description: Floating IP address of gen in public network
+    value: { get_attr: [ gen_floating_ip, floating_ip_address ] }
+  gen_dataplane_ip:
+    description: IP address of gen dataplane port
+    value: { get_attr: [gen_dataplane_port, fixed_ips, 0, ip_address] }
+  gen_dataplane_mac:
+    description: The MAC address of the gen dataplane port
+    value: { get_attr: [gen_dataplane_port, mac_address] }

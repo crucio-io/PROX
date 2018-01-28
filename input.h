@@ -1,6 +1,6 @@
 /*
   Copyright(c) 2010-2017 Intel Corporation.
-  Copyright(c) 2016-2017 Viosoft Corporation.
+  Copyright(c) 2016-2018 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -47,5 +47,6 @@ int reg_input(struct input *in);
 void unreg_input(struct input *in);
 
 void input_proc_until(uint64_t deadline);
+void input_proc(void);
 
 #endif /* _INPUT_H_ */

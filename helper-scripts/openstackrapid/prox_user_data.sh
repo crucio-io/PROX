@@ -2,7 +2,7 @@
 
 ##
 # Copyright(c) 2010-2015 Intel Corporation.
-# Copyright(c) 2016-2017 Viosoft Corporation.
+# Copyright(c) 2016-2018 Viosoft Corporation.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -33,8 +33,7 @@
 ##
 
 echo 128 > /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages
-mount -t hugetlbfs nodev /mnt/huge
+mount  -t hugetlbfs nodev /mnt/huge
 modprobe uio
 insmod /root/dpdk/x86_64-native-linuxapp-gcc/kmod/igb_uio.ko
-/root/dpdk/usertools/dpdk-devbind.py --force --bind igb_uio 00:04.0
 iptables -F

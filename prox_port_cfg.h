@@ -1,6 +1,6 @@
 /*
   Copyright(c) 2010-2017 Intel Corporation.
-  Copyright(c) 2016-2017 Viosoft Corporation.
+  Copyright(c) 2016-2018 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -33,6 +33,7 @@
 #ifndef _PROX_PORT_CFG_H
 #define _PROX_PORT_CFG_H
 
+#include <rte_pci.h>
 #include <rte_ether.h>
 #include <rte_ethdev.h>
 
@@ -75,9 +76,6 @@ struct prox_port_cfg {
 	struct {
 		int tx_offload_cksum;
 	} capabilities;
-	struct ipv4_address_range address_range;
-	uint32_t ipv4_pos;
-	uint8_t ipv4_range_available;
 };
 
 extern rte_atomic32_t lsc;

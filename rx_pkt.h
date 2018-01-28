@@ -1,6 +1,6 @@
 /*
   Copyright(c) 2010-2017 Intel Corporation.
-  Copyright(c) 2016-2017 Viosoft Corporation.
+  Copyright(c) 2016-2018 Viosoft Corporation.
   All rights reserved.
 
   Redistribution and use in source and binary forms, with or without
@@ -37,10 +37,14 @@
 
 struct rte_mbuf;
 struct task_base;
+struct rte_ring;
 
 uint16_t rx_pkt_hw(struct task_base *tbase, struct rte_mbuf ***mbufs);
 uint16_t rx_pkt_hw_pow2(struct task_base *tbase, struct rte_mbuf ***mbufs);
 uint16_t rx_pkt_hw1(struct task_base *tbase, struct rte_mbuf ***mbufs);
+uint16_t rx_pkt_hw_l3(struct task_base *tbase, struct rte_mbuf ***mbufs);
+uint16_t rx_pkt_hw_pow2_l3(struct task_base *tbase, struct rte_mbuf ***mbufs);
+uint16_t rx_pkt_hw1_l3(struct task_base *tbase, struct rte_mbuf ***mbufs);
 
 /* The _multi variation of the function is used to work-around the
    problem with QoS, multi-seg mbufs and vector PMD. When vector
@@ -49,6 +53,9 @@ uint16_t rx_pkt_hw1(struct task_base *tbase, struct rte_mbuf ***mbufs);
 uint16_t rx_pkt_hw_multi(struct task_base *tbase, struct rte_mbuf ***mbufs);
 uint16_t rx_pkt_hw_pow2_multi(struct task_base *tbase, struct rte_mbuf ***mbufs);
 uint16_t rx_pkt_hw1_multi(struct task_base *tbase, struct rte_mbuf ***mbufs);
+uint16_t rx_pkt_hw_multi_l3(struct task_base *tbase, struct rte_mbuf ***mbufs);
+uint16_t rx_pkt_hw_pow2_multi_l3(struct task_base *tbase, struct rte_mbuf ***mbufs);
+uint16_t rx_pkt_hw1_multi_l3(struct task_base *tbase, struct rte_mbuf ***mbufs);
 
 uint16_t rx_pkt_sw(struct task_base *tbase, struct rte_mbuf ***mbufs);
 uint16_t rx_pkt_sw_pow2(struct task_base *tbase, struct rte_mbuf ***mbufs);
@@ -61,5 +68,6 @@ uint16_t rx_pkt_distr(struct task_base *tbase, struct rte_mbuf ***mbufs);
 uint16_t rx_pkt_bw(struct task_base *tbase, struct rte_mbuf ***mbufs);
 uint16_t rx_pkt_tsc(struct task_base *tbase, struct rte_mbuf ***mbufs);
 uint16_t rx_pkt_all(struct task_base *tbase, struct rte_mbuf ***mbufs);
+uint16_t ring_deq(struct rte_ring *r, struct rte_mbuf **mbufs);
 
 #endif /* _RX_PKT_H_ */

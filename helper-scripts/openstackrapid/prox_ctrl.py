@@ -1,6 +1,6 @@
 ##
 # Copyright(c) 2010-2015 Intel Corporation.
-# Copyright(c) 2016-2017 Viosoft Corporation.
+# Copyright(c) 2016-2018 Viosoft Corporation.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -213,6 +213,12 @@ class prox_sock(object):
 
     def set_random(self, cores, task, offset, mask, length):
         self._send('set random %s %s %s %s %s' % (','.join(map(str, cores)), task, offset, mask, length))
+
+    def set_size(self, cores, task, pkt_size):
+        self._send('pkt_size %s %s %s' % (','.join(map(str, cores)), task, pkt_size))
+
+    def set_value(self, cores, task, offset, value, length):
+        self._send('set value %s %s %s %s %s' % (','.join(map(str, cores)), task, offset, value, length))
 
     def _send(self, cmd):
         """Append LF and send command to the PROX instance."""
