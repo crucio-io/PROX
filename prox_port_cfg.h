@@ -76,6 +76,9 @@ struct prox_port_cfg {
 	struct {
 		int tx_offload_cksum;
 	} capabilities;
+	struct ipv4_address_range address_range;
+	uint32_t ipv4_pos;
+	uint8_t ipv4_range_available;
 };
 
 extern rte_atomic32_t lsc;
